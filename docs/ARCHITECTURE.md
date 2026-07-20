@@ -88,6 +88,18 @@ This is keyword search, not vector/embedding search:
   there's no chunking, size limit, or embedding step, so large knowledge
   files can blow past a model's context window.
 
+> **Does not work on Vercel (or other read-only-filesystem serverless
+> platforms).** `ensureDir()`/`fs.writeFileSync` need a writable
+> `process.cwd()`. Vercel's serverless functions ship a read-only
+> filesystem (only `/tmp` is writable, and that's ephemeral/per-instance),
+> so every `/api/knowledge` call there fails with `ENOENT: ... mkdir
+> '/var/task/knowledge'`. Confirmed live on the deployed instance — every
+> other route/page works fine. This is a known, accepted limitation for
+> now, not a bug to silently patch: fixing it for real means swapping the
+> local filesystem calls for a real storage backend (Vercel Blob, S3, a
+> database), which is a deliberate scope decision, not a one-line fix. If
+> you need the Knowledge Base in production, that's the next piece of work.
+
 ## Rendering
 
 `components/markdown.tsx` is a small hand-rolled Markdown renderer (headers,

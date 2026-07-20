@@ -27,6 +27,20 @@ Run the test suite with:
 npm test
 ```
 
+## Deployment
+
+Live at **https://nexus-ai-os-kohl.vercel.app** (Vercel).
+
+> **Known limitation:** the Knowledge Base tab (`/api/knowledge`) does not
+> work on this deployment. It writes uploaded files to a local `knowledge/`
+> directory on disk, which requires a writable filesystem; Vercel's
+> serverless functions are read-only outside of ephemeral `/tmp`, so every
+> knowledge-base call there fails with `ENOENT`. Every other feature
+> (dashboard/CEO orchestration, PR Reviewer, Architecture Studio, Proposal
+> Creator, Research Digest) works normally. See
+> [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#knowledge-base--rag-appapiknowledgerouteets)
+> for what a real fix would involve.
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — stack, request flow,
