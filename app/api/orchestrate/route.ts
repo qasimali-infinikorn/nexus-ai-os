@@ -16,6 +16,10 @@ export const runtime = "nodejs";
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Internal server error during orchestration.";
+}
+
 export async function POST(req: NextRequest) {
   const clientKey = getClientKey(req);
   const { allowed, retryAfterMs } = rateLimit(`orchestrate:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
@@ -26,7 +30,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: any;
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
@@ -74,9 +78,16 @@ export async function POST(req: NextRequest) {
 
   const encoder = new TextEncoder();
 
+  interface StreamEvent {
+    type: "status" | "agent_result" | "final_result" | "error";
+    message?: string;
+    content?: string;
+    agent?: string;
+  }
+
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (data: any) => {
+      const send = (data: StreamEvent) => {
         controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
       };
 
@@ -131,7 +142,7 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
             prompt
           );
           classificationResult = classificationResult.trim().toLowerCase().replace(/['"`]/g, "");
-        } catch (e: any) {
+        } catch {
           send({ type: "status", message: `Routing failed, defaulting to general coordination...` });
         }
 
@@ -167,10 +178,10 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
               message: `Specialist ${specialist.name} completed analysis.`
             });
             send({ type: "agent_result", agent: specialistKey, content: specialistOutput });
-          } catch (e: any) {
+          } catch (e: unknown) {
             send({
               type: "status",
-              message: `Warning: Specialist execution failed: ${e.message}. Continuing with CEO synthesis.`
+              message: `Warning: Specialist execution failed: ${getErrorMessage(e)}. Continuing with CEO synthesis.`
             });
           }
         } else {
@@ -208,8 +219,8 @@ Make it professional, deep, and production-ready.`;
 
         send({ type: "final_result", content: finalResult });
         controller.close();
-      } catch (error: any) {
-        send({ type: "error", message: error?.message || "Internal server error during orchestration." });
+      } catch (error: unknown) {
+        send({ type: "error", message: getErrorMessage(error) });
         controller.close();
       }
     }
@@ -217,7 +228,8 @@ Make it professional, deep, and production-ready.`;
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
+      // The body is newline-delimited JSON events, not SSE.
+      "Content-Type": "application/x-ndjson; charset=utf-8",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive"
     }
