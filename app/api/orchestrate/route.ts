@@ -1,0 +1,225 @@
+import { NextRequest, NextResponse } from "next/server";
+import { callLLM, AGENTS, APIKeys } from "@/lib/agents";
+import { getClientKey, rateLimit } from "@/lib/rate-limit";
+import {
+  MAX_CONTEXT_LENGTH,
+  MAX_MODEL_LENGTH,
+  MAX_PROMPT_LENGTH,
+  isNonEmptyString,
+  isValidProvider
+} from "@/lib/validation";
+
+export const runtime = "nodejs";
+
+// Coordinator mode can trigger up to 3 sequential LLM calls per request, so
+// it gets a tighter budget than a single direct-specialist call.
+const RATE_LIMIT = 20;
+const RATE_WINDOW_MS = 60_000;
+
+export async function POST(req: NextRequest) {
+  const clientKey = getClientKey(req);
+  const { allowed, retryAfterMs } = rateLimit(`orchestrate:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { type: "error", message: "Rate limit exceeded. Please wait before trying again." },
+      { status: 429, headers: { "Retry-After": Math.ceil(retryAfterMs / 1000).toString() } }
+    );
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ type: "error", message: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const { provider, model, prompt, agentType, keys, context } = body;
+
+  if (!isValidProvider(provider)) {
+    return NextResponse.json({ type: "error", message: `Unsupported provider: ${provider}` }, { status: 400 });
+  }
+  if (!isNonEmptyString(prompt)) {
+    return NextResponse.json({ type: "error", message: "prompt is required." }, { status: 400 });
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return NextResponse.json(
+      { type: "error", message: `prompt exceeds the maximum length of ${MAX_PROMPT_LENGTH} characters.` },
+      { status: 400 }
+    );
+  }
+  if (context !== undefined && (typeof context !== "string" || context.length > MAX_CONTEXT_LENGTH)) {
+    return NextResponse.json(
+      { type: "error", message: `context exceeds the maximum length of ${MAX_CONTEXT_LENGTH} characters.` },
+      { status: 400 }
+    );
+  }
+  if (typeof model !== "string" || model.length > MAX_MODEL_LENGTH) {
+    return NextResponse.json(
+      { type: "error", message: `model must be a string of at most ${MAX_MODEL_LENGTH} characters.` },
+      { status: 400 }
+    );
+  }
+  if (typeof agentType !== "string" || (agentType !== "coordinator" && !AGENTS[agentType])) {
+    return NextResponse.json({ type: "error", message: `Unknown agent type: ${agentType}` }, { status: 400 });
+  }
+
+  const apiKeys = (keys ?? {}) as APIKeys;
+  const activeKey = apiKeys[provider as keyof APIKeys];
+  if (!activeKey) {
+    return NextResponse.json(
+      { type: "error", message: `API Key for provider "${provider}" is missing. Please configure it in Settings.` },
+      { status: 400 }
+    );
+  }
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: any) => {
+        controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
+      };
+
+      try {
+        // 1. Direct Specialist Execution
+        if (agentType !== "coordinator") {
+          const specialist = AGENTS[agentType];
+          if (!specialist) {
+            throw new Error(`Unknown agent type: ${agentType}`);
+          }
+
+          send({ type: "status", message: `Executing ${specialist.name} Agent...` });
+          
+          let fullPrompt = prompt;
+          if (context) {
+            fullPrompt = `CONTEXT/INPUT:\n${context}\n\nUSER PROMPT:\n${prompt}`;
+          }
+
+          const result = await callLLM(provider, model, activeKey, specialist.systemPrompt, fullPrompt);
+          
+          // Stream the result back in chunks for simulation, or simply send the result
+          send({ type: "agent_result", agent: agentType, content: result });
+          send({ type: "final_result", content: result });
+          controller.close();
+          return;
+        }
+
+        // 2. Multi-Agent Coordinator (CEO Flow)
+        send({ type: "status", message: "CEO analyzing request intent..." });
+
+        // Let the LLM classify which specialist is needed
+        const classificationSystemPrompt = `You are the Coordinator Routing Engine for Nexus AI Engineering OS.
+Given the user's prompt, select the single best specialist agent from this list:
+- "eng_lead" (for code reviews, bug analysis, refactoring, SOLID reviews, code snippets, git diffs)
+- "architecture" (for system design, cloud architecture, diagrams, component design, database/stack decisions)
+- "proposal" (for client proposals, pricing, roadmaps, consulting deliverables)
+- "research" (for technology trends, developer tools, comparing libraries, migration complexity)
+- "documentation" (for generating READMEs, ADRs, Swagger, Confluence pages, runbooks)
+- "client_meeting" (for preparing agendas, meeting notes/MOM, email drafts, sprint tasks)
+- "knowledge" (for questions that require searching company resources, internal documentation, RFCs)
+
+If the query is general and does not fit one specific specialist, return "none".
+Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), nothing else. Do not output markdown, punctuation, or spaces.`;
+
+        let classificationResult = "";
+        try {
+          classificationResult = await callLLM(
+            provider,
+            model,
+            activeKey,
+            classificationSystemPrompt,
+            prompt
+          );
+          classificationResult = classificationResult.trim().toLowerCase().replace(/['"`]/g, "");
+        } catch (e: any) {
+          send({ type: "status", message: `Routing failed, defaulting to general coordination...` });
+        }
+
+        let specialistKey = classificationResult;
+        // Fallback checks
+        if (!AGENTS[specialistKey]) {
+          specialistKey = "none";
+        }
+
+        let specialistOutput = "";
+        if (specialistKey !== "none") {
+          const specialist = AGENTS[specialistKey];
+          send({
+            type: "status",
+            message: `CEO routing task to specialist: ${specialist.name} (${specialist.role})...`
+          });
+
+          let specialistPrompt = prompt;
+          if (context) {
+            specialistPrompt = `CONTEXT:\n${context}\n\nUSER PROMPT:\n${prompt}`;
+          }
+
+          try {
+            specialistOutput = await callLLM(
+              provider,
+              model,
+              activeKey,
+              specialist.systemPrompt,
+              specialistPrompt
+            );
+            send({
+              type: "status",
+              message: `Specialist ${specialist.name} completed analysis.`
+            });
+            send({ type: "agent_result", agent: specialistKey, content: specialistOutput });
+          } catch (e: any) {
+            send({
+              type: "status",
+              message: `Warning: Specialist execution failed: ${e.message}. Continuing with CEO synthesis.`
+            });
+          }
+        } else {
+          send({
+            type: "status",
+            message: "CEO processing directly (no specialist routing required)..."
+          });
+        }
+
+        // Synthesize final CEO response
+        send({ type: "status", message: "CEO synthesizing final executive response..." });
+
+        const synthesisPrompt = `The user request: "${prompt}"
+        
+${specialistOutput ? `Specialist Agent (${specialistKey}) findings:\n${specialistOutput}` : ""}
+${context ? `Additional Context:\n${context}` : ""}
+
+Please synthesize the final response. Maintain your role as the Chief of Staff (CEO Agent) with 20+ years of experience.
+Structure your output precisely as follows:
+1. Executive Summary: High-level overview of findings.
+2. Technical Details: Substantive engineering explanations.
+3. Risks: Identify architectural, security, or implementation risks.
+4. Recommendations: Actionable solutions.
+5. Next Actions: Recommended next steps.
+
+Make it professional, deep, and production-ready.`;
+
+        const finalResult = await callLLM(
+          provider,
+          model,
+          activeKey,
+          AGENTS.coordinator.systemPrompt,
+          synthesisPrompt
+        );
+
+        send({ type: "final_result", content: finalResult });
+        controller.close();
+      } catch (error: any) {
+        send({ type: "error", message: error?.message || "Internal server error during orchestration." });
+        controller.close();
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive"
+    }
+  });
+}
