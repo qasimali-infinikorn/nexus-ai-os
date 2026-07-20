@@ -14,6 +14,8 @@
       "Bash(npm test)",
       "Bash(npm test *)",
       "Bash(npx vitest *)",
+      "Bash(npx drizzle-kit generate*)",
+      "Bash(npx tsc *)",
       "Bash(npm install)",
       "Bash(npm install *)",
       "Bash(npm ci)",

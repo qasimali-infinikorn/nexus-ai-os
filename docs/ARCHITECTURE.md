@@ -2,19 +2,25 @@
 
 Nexus AI Engineering OS is a single-page Next.js dashboard that routes a user's
 prompt to one of several "specialist" LLM system prompts, optionally via a
-"coordinator" agent that classifies the request first. There is no database,
-no auth, and no server-side API key storage — every request carries the
-caller's own provider key.
+"coordinator" agent that classifies the request first. There is no auth and
+no server-side LLM-provider key storage — every `/api/orchestrate` request
+carries the caller's own provider key. The Knowledge Base is the one feature
+with real persistence, backed by Postgres.
 
 ## Stack
 
 - **Next.js 16** (App Router, `runtime = "nodejs"` on API routes) + **React 19**
 - No LLM SDKs — `lib/agents.ts` calls the OpenAI, Anthropic, and Gemini REST
   APIs directly with `fetch`
-- No database — the "Knowledge Base" feature persists markdown/text files to
-  a `knowledge/` directory on the server's local filesystem
-- Client state only: API keys, provider, and model are kept in
-  `localStorage` (see `app/page.tsx`), never in a server session
+- **Postgres + pgvector**, via **Drizzle ORM** (`lib/db/`) — backs the
+  Knowledge Base (documents, chunks, optional embeddings). Any Postgres with
+  the `vector` extension works; Supabase is the reference target since it
+  offers pgvector on its free tier. See "Knowledge Base" below and
+  [`docs/DATABASE.md`](./DATABASE.md) for setup.
+- Client state only for LLM provider keys: kept in `localStorage`
+  (see `app/page.tsx`), never in a server session. Embedding-provider keys
+  used by the Knowledge Base follow the same per-request BYOK model (see
+  below) — nothing is stored server-side either way.
 
 > This project pins a pre-release/experimental Next.js version (16.2.10) with
 > conventions that may differ from stock Next.js docs — see `AGENTS.md` at the
@@ -77,28 +83,37 @@ state; each call is a single stateless system+user prompt round trip.
 
 ## Knowledge Base / RAG (`app/api/knowledge/route.ts`)
 
-This is keyword search, not vector/embedding search:
+Documents are rows in Postgres (`documents`, `document_chunks` —
+`lib/db/schema.ts`), not files on disk. This replaced an earlier
+filesystem-backed implementation that didn't work on Vercel (serverless
+functions there have a read-only filesystem outside ephemeral `/tmp`,
+confirmed live as `ENOENT: ... mkdir '/var/task/knowledge'`); Postgres has no
+such constraint.
 
-- Files live under `<repo>/knowledge/*` on disk.
-- `POST { action: "search", query }` splits the query into terms, counts
-  literal (now regex-escaped) occurrences of each term per file, ranks files
-  by score, and concatenates all matching file contents into one `context`
-  blob.
-- That `context` blob is sent as-is to the `knowledge` specialist prompt —
-  there's no chunking, size limit, or embedding step, so large knowledge
-  files can blow past a model's context window.
-
-> **Does not work on Vercel (or other read-only-filesystem serverless
-> platforms).** `ensureDir()`/`fs.writeFileSync` need a writable
-> `process.cwd()`. Vercel's serverless functions ship a read-only
-> filesystem (only `/tmp` is writable, and that's ephemeral/per-instance),
-> so every `/api/knowledge` call there fails with `ENOENT: ... mkdir
-> '/var/task/knowledge'`. Confirmed live on the deployed instance — every
-> other route/page works fine. This is a known, accepted limitation for
-> now, not a bug to silently patch: fixing it for real means swapping the
-> local filesystem calls for a real storage backend (Vercel Blob, S3, a
-> database), which is a deliberate scope decision, not a one-line fix. If
-> you need the Knowledge Base in production, that's the next piece of work.
+- `POST { action: "add", name, content }` upserts a `documents` row (unique
+  on `name`), then re-chunks `content` via `lib/chunk.ts` (paragraph-aware,
+  ~1000 chars/chunk) into `document_chunks`, replacing any previous chunks
+  for that document.
+- **Two search modes**, chosen per-request by whether the caller supplies
+  an `embed: { provider: "openai", key }` field:
+  - **No `embed`** (default, matches the original behavior): keyword search
+    over whole-document `content` — literal (regex-escaped) term-occurrence
+    counting, same relevance scoring as before.
+  - **With `embed`**: semantic search. The query is embedded via
+    `lib/embeddings.ts` (OpenAI `text-embedding-3-small`, 1536 dims) and
+    matched against `document_chunks.embedding` using pgvector cosine
+    distance (`drizzle-orm`'s `cosineDistance`), returning the closest
+    chunks across all documents.
+  - Chunks are stored with a `null` embedding when no `embed` key is given
+    at write time — the keyword fallback still works over the full document
+    content regardless, only semantic search needs embeddings to exist.
+- **Not yet wired into the UI**: `components/knowledge-base.tsx` doesn't
+  send `embed` today, so the dashboard always uses keyword search. Semantic
+  search is available at the API level; surfacing an embedding-key input in
+  the Knowledge Base tab is a follow-up, not done here.
+- Requires `DATABASE_URL` to be set (see [`DATABASE.md`](./DATABASE.md)) —
+  `getDb()` throws a clear error if it isn't, rather than the route crashing
+  at import time.
 
 ## Rendering
 
@@ -125,10 +140,13 @@ server-side logic that doesn't require a browser:
   helpers.
 - `tests/api/` — both route handlers exercised directly (no dev server
   needed) via `next/server`'s `NextRequest`, with `fetch` mocked for
-  provider calls and `process.cwd()` swapped to a temp dir for the knowledge
-  route's filesystem writes. Covers the guardrails above plus a streamed
-  NDJSON response (`tests/helpers/stream.ts` reads it back into events) for
-  the direct-specialist path.
+  provider/embedding calls. The knowledge route runs against a real embedded
+  Postgres (`@electric-sql/pglite` + the `pgvector` extension via
+  `@electric-sql/pglite-pgvector`, `tests/helpers/testDb.ts`) with the actual
+  checked-in migrations applied — not a mocked DB layer. Covers the
+  guardrails above plus a streamed NDJSON response
+  (`tests/helpers/stream.ts` reads it back into events) for the
+  direct-specialist path.
 
 There is intentionally no component/UI test layer yet — `components/*.tsx`
 and the dashboard's client-side streaming/localStorage logic are untested;
@@ -139,5 +157,11 @@ library, which is a separate decision from the API-layer harness added here.
 
 - No component/browser tests (see above).
 - No authentication on either API route (see [`SECURITY.md`](./SECURITY.md)).
-- No persistence beyond the flat-file `knowledge/` directory (no DB, no
-  vector store).
+- Semantic search isn't wired into the Knowledge Base UI yet (API-only, see
+  above).
+- Only OpenAI embeddings are supported (`lib/embeddings.ts`); adding another
+  provider means adding its dimension and a migration to match
+  `EMBEDDING_DIMENSIONS` in `lib/db/schema.ts`.
+- No background job/queue system — embedding generation happens inline in
+  the request (synchronous), so a very large document's `add` call will be
+  slow proportional to its chunk count.

@@ -1,5 +1,5 @@
-export async function readNdjson(response: Response): Promise<any[]> {
-  const events: any[] = [];
+export async function readNdjson(response: Response): Promise<unknown[]> {
+  const events: unknown[] = [];
   const reader = response.body?.getReader();
   if (!reader) return events;
 

@@ -1,19 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import fs from "fs";
-import os from "os";
-import path from "path";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
+import { GET, POST } from "@/app/api/knowledge/route";
+import { __setDbForTests, type Database } from "@/lib/db/client";
+import { documentChunks, documents, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
+import { resetRateLimiterForTests } from "@/lib/rate-limit";
+import { createTestDb } from "../helpers/testDb";
 
-// KNOWLEDGE_DIR is computed from process.cwd() at module load time, so
-// process.cwd() must be mocked *before* the route module is imported. Each
-// test resets the module registry and re-imports so it picks up the fresh
-// tmp dir.
-let tmpDir: string;
-
-async function loadRoute() {
-  vi.resetModules();
-  return import("@/app/api/knowledge/route");
-}
+let testDb: Database;
 
 function postRequest(body: unknown) {
   return new NextRequest("http://localhost/api/knowledge", {
@@ -27,19 +21,42 @@ function getRequest() {
   return new NextRequest("http://localhost/api/knowledge");
 }
 
-beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-knowledge-"));
-  vi.spyOn(process, "cwd").mockReturnValue(tmpDir);
+function oneHot(index: number, dims = EMBEDDING_DIMENSIONS): number[] {
+  const vector = new Array(dims).fill(0);
+  vector[index] = 1;
+  return vector;
+}
+
+function embeddingsResponse(vectors: number[][]) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ data: vectors.map((embedding, index) => ({ embedding, index })) }),
+    text: async () => ""
+  } as Response;
+}
+
+// PGlite boots a real WASM Postgres and runs the full migration set, which
+// costs ~1.5s — do that once per file, then just clear tables between
+// tests, rather than paying that cost for every single test.
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+
+beforeEach(async () => {
+  resetRateLimiterForTests();
+  __setDbForTests(testDb);
+  await testDb.delete(documentChunks);
+  await testDb.delete(documents);
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  __setDbForTests(null);
+  vi.unstubAllGlobals();
 });
 
 describe("GET /api/knowledge", () => {
-  it("returns an empty file list when the directory has just been created", async () => {
-    const { GET } = await loadRoute();
+  it("returns an empty file list when no documents exist", async () => {
     const res = await GET(getRequest());
     const data = await res.json();
 
@@ -48,85 +65,106 @@ describe("GET /api/knowledge", () => {
     expect(data.files).toEqual([]);
   });
 
-  it("lists files that were written directly to disk", async () => {
-    const { GET } = await loadRoute();
-    fs.mkdirSync(path.join(tmpDir, "knowledge"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, "knowledge", "standards.md"), "# Standards");
+  it("lists documents that exist in the database", async () => {
+    await testDb.insert(documents).values({ name: "standards.md", content: "# Standards" });
 
     const res = await GET(getRequest());
     const data = await res.json();
 
     expect(data.files).toHaveLength(1);
     expect(data.files[0].name).toBe("standards.md");
+    expect(data.files[0].sizeBytes).toBe(Buffer.byteLength("# Standards", "utf8"));
   });
 });
 
 describe("POST /api/knowledge - add", () => {
-  it("creates a file with a sanitized name", async () => {
-    const { POST } = await loadRoute();
-    const res = await POST(postRequest({ action: "add", name: "../../evil.md", content: "hi" }));
+  it("creates a document with a trimmed name", async () => {
+    const res = await POST(postRequest({ action: "add", name: "  notes.md  ", content: "hi" }));
     const data = await res.json();
 
     expect(res.status).toBe(200);
     expect(data.success).toBe(true);
 
-    // Should land inside the knowledge dir under a sanitized basename, never
-    // escaping it.
-    const written = fs.readdirSync(path.join(tmpDir, "knowledge"));
-    expect(written).toEqual(["evil.md"]);
+    const rows = await testDb.select().from(documents);
+    expect(rows.map((r) => r.name)).toEqual(["notes.md"]);
   });
 
-  it("rejects a name of '.' or '..' outright", async () => {
-    const { POST } = await loadRoute();
-    for (const name of [".", ".."]) {
+  it("replaces content and chunks when the same name is added again", async () => {
+    await POST(postRequest({ action: "add", name: "doc.md", content: "original content" }));
+    const res = await POST(postRequest({ action: "add", name: "doc.md", content: "updated content" }));
+    expect(res.status).toBe(200);
+
+    const rows = await testDb.select().from(documents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toBe("updated content");
+
+    const chunks = await testDb.select().from(documentChunks).where(eq(documentChunks.documentId, rows[0].id));
+    expect(chunks.map((c) => c.content)).toEqual(["updated content"]);
+  });
+
+  it("rejects an empty or whitespace-only name", async () => {
+    for (const name of ["", "   "]) {
       const res = await POST(postRequest({ action: "add", name, content: "hi" }));
       expect(res.status).toBe(400);
     }
   });
 
   it("rejects content larger than the configured byte cap", async () => {
-    const { POST } = await loadRoute();
     const { MAX_KNOWLEDGE_CONTENT_BYTES } = await import("@/lib/validation");
     const oversized = "a".repeat(MAX_KNOWLEDGE_CONTENT_BYTES + 1);
 
     const res = await POST(postRequest({ action: "add", name: "big.md", content: oversized }));
     expect(res.status).toBe(400);
   });
+
+  it("computes and stores an embedding per chunk when an embed key is supplied", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(embeddingsResponse([oneHot(0)])));
+
+    const res = await POST(
+      postRequest({ action: "add", name: "doc.md", content: "short content", embed: { provider: "openai", key: "sk-test" } })
+    );
+    expect(res.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    const chunks = await testDb.select().from(documentChunks);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].embedding).not.toBeNull();
+  });
+
+  it("stores chunks without embeddings when no embed key is supplied", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    await POST(postRequest({ action: "add", name: "doc.md", content: "short content" }));
+
+    expect(fetch).not.toHaveBeenCalled();
+    const chunks = await testDb.select().from(documentChunks);
+    expect(chunks[0].embedding).toBeNull();
+  });
 });
 
 describe("POST /api/knowledge - delete", () => {
-  it("deletes an existing file", async () => {
-    const { POST } = await loadRoute();
-    fs.mkdirSync(path.join(tmpDir, "knowledge"), { recursive: true });
-    const target = path.join(tmpDir, "knowledge", "delete-me.md");
-    fs.writeFileSync(target, "bye");
+  it("deletes a document and cascades to its chunks", async () => {
+    await POST(postRequest({ action: "add", name: "doc.md", content: "some content" }));
+    expect(await testDb.select().from(documentChunks)).not.toHaveLength(0);
 
-    const res = await POST(postRequest({ action: "delete", name: "delete-me.md" }));
+    const res = await POST(postRequest({ action: "delete", name: "doc.md" }));
     const data = await res.json();
-
     expect(data.success).toBe(true);
-    expect(fs.existsSync(target)).toBe(false);
+
+    expect(await testDb.select().from(documents)).toHaveLength(0);
+    expect(await testDb.select().from(documentChunks)).toHaveLength(0);
   });
 
-  it("returns 404 for a file that does not exist", async () => {
-    const { POST } = await loadRoute();
+  it("returns 404 for a document that does not exist", async () => {
     const res = await POST(postRequest({ action: "delete", name: "missing.md" }));
     expect(res.status).toBe(404);
   });
-
-  it("cannot be used to delete the knowledge directory itself via '..'", async () => {
-    const { POST } = await loadRoute();
-    const res = await POST(postRequest({ action: "delete", name: ".." }));
-    expect(res.status).toBe(400);
-  });
 });
 
-describe("POST /api/knowledge - search", () => {
-  it("ranks files by literal term-occurrence count", async () => {
-    const { POST } = await loadRoute();
-    fs.mkdirSync(path.join(tmpDir, "knowledge"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, "knowledge", "a.md"), "testing testing testing");
-    fs.writeFileSync(path.join(tmpDir, "knowledge", "b.md"), "testing once");
+describe("POST /api/knowledge - search (keyword fallback)", () => {
+  it("ranks documents by literal term-occurrence count", async () => {
+    await POST(postRequest({ action: "add", name: "a.md", content: "testing testing testing" }));
+    await POST(postRequest({ action: "add", name: "b.md", content: "testing once" }));
 
     const res = await POST(postRequest({ action: "search", query: "testing" }));
     const data = await res.json();
@@ -137,9 +175,7 @@ describe("POST /api/knowledge - search", () => {
   });
 
   it("does not throw on a query containing regex metacharacters", async () => {
-    const { POST } = await loadRoute();
-    fs.mkdirSync(path.join(tmpDir, "knowledge"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, "knowledge", "a.md"), "some (content) here");
+    await POST(postRequest({ action: "add", name: "a.md", content: "some (content) here" }));
 
     const res = await POST(postRequest({ action: "search", query: "(a+)+$ [unbalanced" }));
     expect(res.status).toBe(200);
@@ -148,31 +184,45 @@ describe("POST /api/knowledge - search", () => {
   });
 
   it("rejects an overlong query", async () => {
-    const { POST } = await loadRoute();
     const { MAX_KNOWLEDGE_QUERY_LENGTH } = await import("@/lib/validation");
     const res = await POST(postRequest({ action: "search", query: "q".repeat(MAX_KNOWLEDGE_QUERY_LENGTH + 1) }));
     expect(res.status).toBe(400);
   });
 });
 
+describe("POST /api/knowledge - search (pgvector semantic search)", () => {
+  it("ranks the chunk closest to the query embedding first", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(embeddingsResponse([oneHot(0)])) // doc-a embedding
+      .mockResolvedValueOnce(embeddingsResponse([oneHot(1)])) // doc-b embedding
+      .mockResolvedValueOnce(embeddingsResponse([oneHot(0)])); // query embedding (matches doc-a)
+    vi.stubGlobal("fetch", fetchMock);
+
+    await POST(postRequest({ action: "add", name: "doc-a.md", content: "alpha content", embed: { provider: "openai", key: "sk-test" } }));
+    await POST(postRequest({ action: "add", name: "doc-b.md", content: "beta content", embed: { provider: "openai", key: "sk-test" } }));
+
+    const res = await POST(postRequest({ action: "search", query: "anything", embed: { provider: "openai", key: "sk-test" } }));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.matches[0].filename).toBe("doc-a.md");
+    expect(data.matches[0].relevance).toBeGreaterThan(data.matches[1].relevance);
+  });
+});
+
 describe("rate limiting", () => {
   it("returns 429 once the write rate limit is exceeded", async () => {
-    const { POST } = await loadRoute();
-
     let lastStatus = 200;
     for (let i = 0; i < 40; i++) {
       const res = await POST(postRequest({ action: "add", name: `file-${i}.md`, content: "x" }));
       lastStatus = res.status;
       if (lastStatus === 429) break;
     }
-
     expect(lastStatus).toBe(429);
   });
 
   it("tracks GET (read) and POST (write) budgets independently", async () => {
-    const { GET, POST } = await loadRoute();
-
-    // Exhaust the write budget only.
     let lastWriteStatus = 200;
     for (let i = 0; i < 40; i++) {
       const res = await POST(postRequest({ action: "add", name: `f-${i}.md`, content: "x" }));
@@ -181,7 +231,6 @@ describe("rate limiting", () => {
     }
     expect(lastWriteStatus).toBe(429);
 
-    // GET should be unaffected by the exhausted write budget.
     const getRes = await GET(getRequest());
     expect(getRes.status).toBe(200);
   });

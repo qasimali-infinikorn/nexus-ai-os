@@ -12,6 +12,10 @@ This app is a **bring-your-own-key** tool with no backend account system:
   own (no `.env` / server-side credentials are used anywhere).
 - The server-side calls to OpenAI/Anthropic/Gemini in `lib/agents.ts` exist
   only to avoid CORS issues calling provider APIs directly from the browser.
+- The Knowledge Base's optional embedding key (`embed: { provider, key }` on
+  `/api/knowledge`) follows the same per-request BYOK model — it's never
+  persisted server-side either, only used inline to call the embeddings API
+  for that one request.
 
 **Implication:** anyone with script access to the page (XSS) or physical/
 session access to the browser profile can read the keys out of
@@ -64,19 +68,31 @@ adding authentication in front of it** — see "Gaps" below.
    in-memory state — see the caveat in `lib/rate-limit.ts` if this app is
    ever run across multiple instances.
 
-6. **Hardened path resolution for the knowledge file API.** The original
-   `path.basename()` sanitization already blocked `../` traversal, but a
-   name of `"."` or `".."` could still survive it and resolve to the
+6. **Hardened path resolution for the knowledge file API (now moot).** The
+   original `path.basename()` sanitization already blocked `../` traversal,
+   but a name of `"."` or `".."` could still survive it and resolve to the
    knowledge directory itself or its parent (writes/deletes on a directory
    fail with `EISDIR`/`EPERM` rather than succeeding, so this wasn't
-   exploitable, but it's now rejected outright).
-   **Fix:** `resolveSafeKnowledgePath()` explicitly rejects `.`/`..` and
-   verifies the resolved path's parent is exactly the knowledge directory
-   before any read/write.
+   exploitable, but it was hardened to reject those names outright). The
+   Knowledge Base has since moved from the filesystem to Postgres (see
+   [`ARCHITECTURE.md`](./ARCHITECTURE.md#knowledge-base--rag-appapiknowledgerouteets)),
+   so this whole class of finding no longer applies — `name` is just a
+   unique text label now, not a filesystem path.
+
+7. **`/api/knowledge`'s read and write rate limits shared one counter.**
+   Found via live testing after deployment: `GET` (60/min) and `POST`
+   (30/min) both keyed their rate-limit bucket as `knowledge:<client>`, so
+   exhausting one budget could trip the other early, and whichever endpoint
+   happened to be called would compare the *shared* count against its *own*
+   declared limit — not the independent budgets the docs described.
+   **Fix:** buckets are now keyed `knowledge:read:<client>` /
+   `knowledge:write:<client>`; verified live (write budget now exhausts at
+   exactly request 31 with the 30/min limit, `GET` unaffected) and covered
+   by a regression test.
 
 ### Open — not fixed in this pass
 
-7. **No authentication on `/api/knowledge` or `/api/orchestrate`.** If this
+8. **No authentication on `/api/knowledge` or `/api/orchestrate`.** If this
    app is ever deployed somewhere reachable by more than the local user,
    anyone can read/write/delete knowledge-base files and burn the caller's
    configured LLM quota (the new rate limits slow this down but don't stop
@@ -91,8 +107,10 @@ adding authentication in front of it** — see "Gaps" below.
   LLM/user content exclusively through React elements — it builds output
   node-by-node from parsed text rather than inserting markup, so LLM output
   cannot execute scripts in the page.
-- **Path traversal in the knowledge file API is handled correctly** (see
-  fix #6 above for the `.`/`..` edge case hardening).
+- **No SQL injection surface:** all Knowledge Base queries go through
+  Drizzle's query builder (`lib/db/schema.ts`, `app/api/knowledge/route.ts`),
+  which parameterizes every value — document name/content, search query
+  terms, and embedding vectors are never string-interpolated into SQL.
 - No dynamic code evaluation (`eval`, dynamically-constructed function
   bodies) or `child_process` usage anywhere in the codebase.
 

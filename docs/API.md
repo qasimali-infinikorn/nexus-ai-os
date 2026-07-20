@@ -67,12 +67,14 @@ a single `error` event.
 
 ## `/api/knowledge`
 
-Manages markdown/text files under `<repo>/knowledge/` (created on first
-use) that back the Knowledge Base's keyword-search RAG context.
+Manages `documents`/`document_chunks` rows in Postgres (see
+[`DATABASE.md`](./DATABASE.md)) that back the Knowledge Base. Requires
+`DATABASE_URL` to be set — every handler returns `500` with a message
+telling you so if it isn't, rather than crashing.
 
 ### `GET /api/knowledge`
 
-Lists files in the knowledge directory.
+Lists all documents.
 
 ```ts
 // 200
@@ -83,46 +85,61 @@ Lists files in the knowledge directory.
 
 ### `POST /api/knowledge`
 
-Body is discriminated by `action`.
-
-**`action: "add"`** — create or overwrite a file.
+Body is discriminated by `action`. `add` and `search` both accept an
+optional `embed` field to opt into pgvector semantic search instead of
+keyword search:
 
 ```ts
-{ action: "add", name: string, content: string }
+embed?: { provider: "openai", key: string }
 ```
-`name` is resolved via `resolveSafeKnowledgePath()` (`path.basename()` +
-a `[^a-zA-Z0-9.-_]` → `_` character filter + a check that the resolved path's
-parent is exactly the knowledge directory, rejecting `.`/`..`/empty names),
-so it cannot escape the knowledge directory. `content` is capped at
-`MAX_KNOWLEDGE_CONTENT_BYTES` (2 MB); oversized content returns `400`.
 
-**`action: "delete"`** — remove a file.
+**`action: "add"`** — create or overwrite a document by name.
+
+```ts
+{ action: "add", name: string, content: string, embed?: { provider: "openai", key: string } }
+```
+`name` is trimmed and capped at `MAX_KNOWLEDGE_NAME_LENGTH` (200 chars); it's
+just a unique label now, not a filesystem path, so no character sanitization
+is needed. `content` is capped at `MAX_KNOWLEDGE_CONTENT_BYTES` (2 MB);
+oversized content returns `400`. Adding a `name` that already exists
+replaces its content and re-chunks it from scratch (old chunks/embeddings
+for that document are deleted first). If `embed` is supplied, each chunk's
+embedding is computed via `lib/embeddings.ts` and stored; otherwise chunks
+are stored with `embedding: null` (keyword search still works over the raw
+`content`; semantic search does not, for chunks with no embedding).
+
+**`action: "delete"`** — remove a document by name (cascades to its chunks).
 
 ```ts
 { action: "delete", name: string }
+// 404 if no document with that name exists
 ```
-`name` goes through the same `resolveSafeKnowledgePath()` check without the
-character-replacement step (so it can target any filename that already
-exists verbatim inside `knowledge/`), still guaranteeing the resolved path
-stays inside the knowledge directory.
 
-**`action: "search"`** — keyword search across all files, used to build RAG
-context before calling the `knowledge` agent via `/api/orchestrate`.
+**`action: "search"`** — used to build RAG context before calling the
+`knowledge` agent via `/api/orchestrate`.
 
 ```ts
-{ action: "search", query: string }   // capped at MAX_KNOWLEDGE_QUERY_LENGTH (500 chars)
+{ action: "search", query: string, embed?: { provider: "openai", key: string } }   // query capped at MAX_KNOWLEDGE_QUERY_LENGTH (500 chars)
 // ->
 {
   success: true,
-  context: string;   // concatenated "--- DOCUMENT: <file> ---\n<content>" blocks, in relevance order
+  context: string;   // concatenated "--- DOCUMENT: <name> ---\n<content-or-chunk>" blocks, in relevance order
   matches: { filename: string; relevance: number; snippet: string }[];
 }
 ```
 
-Relevance is a simple sum of literal term-occurrence counts (query lowercased
-and split on whitespace, terms >2 chars); files with zero term hits but
-non-trivial content still get a token relevance score of `0.1` so they can
-surface as low-confidence matches.
+- **Without `embed`** (default): keyword search over whole-document
+  content — literal (regex-escaped) term-occurrence counting, same scoring
+  as before this was backed by Postgres. `relevance` is a raw match count
+  (or `0.1` for a non-empty document with zero term hits).
+- **With `embed`**: semantic search. The query is embedded, then matched
+  against chunk embeddings by pgvector cosine distance, top 10 closest
+  chunks across all documents. `relevance` is `1 - cosine distance` (higher
+  = more similar). Chunks with no stored embedding are excluded.
 
-All three actions and `GET` return `{ success: false, error: string }` with
-a `4xx`/`500` status on failure instead of throwing.
+`components/knowledge-base.tsx` does not currently send `embed`, so the
+dashboard UI only exercises the keyword-search path — semantic search is
+available at the API level but not yet wired into a UI control.
+
+All actions and `GET` return `{ success: false, error: string }` with a
+`4xx`/`500` status on failure instead of throwing.

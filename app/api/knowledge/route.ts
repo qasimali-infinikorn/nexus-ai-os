@@ -1,48 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { cosineDistance, eq, isNotNull } from "drizzle-orm";
+import { getDb } from "@/lib/db/client";
+import { documentChunks, documents } from "@/lib/db/schema";
+import { chunkText } from "@/lib/chunk";
+import { getEmbeddings } from "@/lib/embeddings";
 import { getClientKey, rateLimit } from "@/lib/rate-limit";
 import {
   MAX_KNOWLEDGE_CONTENT_BYTES,
   MAX_KNOWLEDGE_NAME_LENGTH,
-  MAX_KNOWLEDGE_QUERY_LENGTH
+  MAX_KNOWLEDGE_QUERY_LENGTH,
+  isNonEmptyString
 } from "@/lib/validation";
-
-const KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
-const RESOLVED_KNOWLEDGE_DIR = path.resolve(KNOWLEDGE_DIR);
 
 const READ_RATE_LIMIT = 60;
 const WRITE_RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Internal server error.";
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Ensure the directory exists
-function ensureDir() {
-  if (!fs.existsSync(KNOWLEDGE_DIR)) {
-    fs.mkdirSync(KNOWLEDGE_DIR, { recursive: true });
-  }
-}
-
-// Resolves a user-supplied filename to a path guaranteed to sit directly
-// inside KNOWLEDGE_DIR, or null if the name is empty/invalid or would
-// otherwise escape the directory (e.g. "." or ".." surviving basename()).
-function resolveSafeKnowledgePath(rawName: unknown, sanitize: boolean): string | null {
-  if (typeof rawName !== "string" || !rawName.trim()) return null;
-  if (rawName.length > MAX_KNOWLEDGE_NAME_LENGTH) return null;
-
-  let safeName = path.basename(rawName);
-  if (sanitize) {
-    safeName = safeName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  }
-  if (!safeName || safeName === "." || safeName === "..") return null;
-
-  const filePath = path.resolve(KNOWLEDGE_DIR, safeName);
-  if (path.dirname(filePath) !== RESOLVED_KNOWLEDGE_DIR) return null;
-
-  return filePath;
 }
 
 function checkRateLimit(req: Request, bucket: "read" | "write", limit: number): NextResponse | null {
@@ -57,29 +36,38 @@ function checkRateLimit(req: Request, bucket: "read" | "write", limit: number): 
   return null;
 }
 
-// GET: List all files in the knowledge directory
+// Optional embedding provider config accepted on "add"/"search" bodies to
+// opt into pgvector semantic search. Absent -> keyword search fallback.
+interface EmbedConfig {
+  provider: "openai";
+  key: string;
+}
+
+function parseEmbedConfig(value: unknown): EmbedConfig | null {
+  if (!value || typeof value !== "object") return null;
+  const { provider, key } = value as Record<string, unknown>;
+  if (provider !== "openai" || !isNonEmptyString(key)) return null;
+  return { provider, key };
+}
+
+// GET: List all documents stored in the knowledge base
 export async function GET(req: NextRequest) {
   const limited = checkRateLimit(req, "read", READ_RATE_LIMIT);
   if (limited) return limited;
 
   try {
-    ensureDir();
-    const files = fs.readdirSync(KNOWLEDGE_DIR);
-    const fileList = files
-      .filter((file) => !file.startsWith("."))
-      .map((file) => {
-        const filePath = path.join(KNOWLEDGE_DIR, file);
-        const stats = fs.statSync(filePath);
-        return {
-          name: file,
-          sizeBytes: stats.size,
-          updatedAt: stats.mtime.toISOString()
-        };
-      });
+    const db = getDb();
+    const rows = await db.select().from(documents).orderBy(documents.name);
+
+    const fileList = rows.map((doc) => ({
+      name: doc.name,
+      sizeBytes: Buffer.byteLength(doc.content, "utf8"),
+      updatedAt: new Date(doc.updatedAt).toISOString()
+    }));
 
     return NextResponse.json({ success: true, files: fileList });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -89,14 +77,19 @@ export async function POST(req: NextRequest) {
   if (limited) return limited;
 
   try {
-    ensureDir();
     const body = await req.json();
     const { action } = body;
+    const db = getDb();
 
     if (action === "add") {
       const { name, content } = body;
-      if (typeof content !== "string") {
+      if (!isNonEmptyString(name) || typeof content !== "string") {
         return NextResponse.json({ success: false, error: "Invalid filename or content" }, { status: 400 });
+      }
+
+      const trimmedName = name.trim();
+      if (trimmedName.length > MAX_KNOWLEDGE_NAME_LENGTH) {
+        return NextResponse.json({ success: false, error: "Invalid filename" }, { status: 400 });
       }
       if (Buffer.byteLength(content, "utf8") > MAX_KNOWLEDGE_CONTENT_BYTES) {
         return NextResponse.json(
@@ -105,28 +98,48 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const filePath = resolveSafeKnowledgePath(name, true);
-      if (!filePath) {
-        return NextResponse.json({ success: false, error: "Invalid filename" }, { status: 400 });
+      const [doc] = await db
+        .insert(documents)
+        .values({ name: trimmedName, content })
+        .onConflictDoUpdate({
+          target: documents.name,
+          set: { content, updatedAt: new Date() }
+        })
+        .returning();
+
+      // Replace this document's chunks/embeddings from scratch on every add.
+      await db.delete(documentChunks).where(eq(documentChunks.documentId, doc.id));
+
+      const chunks = chunkText(content);
+      if (chunks.length > 0) {
+        const embedConfig = parseEmbedConfig(body.embed);
+        const embeddings = embedConfig ? await getEmbeddings(embedConfig.provider, embedConfig.key, chunks) : [];
+
+        await db.insert(documentChunks).values(
+          chunks.map((chunkContent, index) => ({
+            documentId: doc.id,
+            chunkIndex: index,
+            content: chunkContent,
+            embedding: embeddings[index] ?? null
+          }))
+        );
       }
 
-      fs.writeFileSync(filePath, content, "utf8");
-      return NextResponse.json({ success: true, message: `File ${path.basename(filePath)} created/updated successfully.` });
+      return NextResponse.json({ success: true, message: `File ${doc.name} created/updated successfully.` });
     }
 
     if (action === "delete") {
       const { name } = body;
-      const filePath = resolveSafeKnowledgePath(name, false);
-      if (!filePath) {
+      if (!isNonEmptyString(name)) {
         return NextResponse.json({ success: false, error: "Filename is required" }, { status: 400 });
       }
 
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        return NextResponse.json({ success: true, message: `File ${path.basename(filePath)} deleted.` });
-      } else {
+      const deleted = await db.delete(documents).where(eq(documents.name, name.trim())).returning();
+      if (deleted.length === 0) {
         return NextResponse.json({ success: false, error: "File not found" }, { status: 404 });
       }
+
+      return NextResponse.json({ success: true, message: `File ${deleted[0].name} deleted.` });
     }
 
     if (action === "search") {
@@ -141,52 +154,67 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const files = fs.readdirSync(KNOWLEDGE_DIR).filter((file) => !file.startsWith("."));
+      const embedConfig = parseEmbedConfig(body.embed);
+
+      if (embedConfig) {
+        const [queryEmbedding] = await getEmbeddings(embedConfig.provider, embedConfig.key, [query]);
+        const distance = cosineDistance(documentChunks.embedding, queryEmbedding);
+
+        const rows = await db
+          .select({ filename: documents.name, content: documentChunks.content, distance })
+          .from(documentChunks)
+          .innerJoin(documents, eq(documentChunks.documentId, documents.id))
+          .where(isNotNull(documentChunks.embedding))
+          .orderBy(distance)
+          .limit(10);
+
+        const matches = rows.map((row) => ({
+          filename: row.filename,
+          relevance: 1 - Number(row.distance),
+          snippet: row.content.slice(0, 300) + (row.content.length > 300 ? "..." : "")
+        }));
+
+        const combinedContext = rows.map((row) => `--- DOCUMENT: ${row.filename} ---\n${row.content}`).join("\n\n");
+
+        return NextResponse.json({ success: true, context: combinedContext.trim(), matches });
+      }
+
+      // Keyword-search fallback over whole-document content (used when no
+      // embedding provider key was supplied).
+      const rows = await db.select().from(documents);
       const matches: { filename: string; relevance: number; snippet: string }[] = [];
       let combinedContext = "";
 
-      const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      const queryTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
 
-      for (const file of files) {
-        const filePath = path.join(KNOWLEDGE_DIR, file);
-        const content = fs.readFileSync(filePath, "utf8");
-
-        // Calculate a simple keyword relevance score
+      for (const doc of rows) {
         let relevanceScore = 0;
         if (queryTerms.length > 0) {
-          const lowerContent = content.toLowerCase();
+          const lowerContent = doc.content.toLowerCase();
           queryTerms.forEach((term) => {
             const matchesCount = (lowerContent.match(new RegExp(escapeRegExp(term), "g")) || []).length;
             relevanceScore += matchesCount;
           });
         }
 
-        // If no specific keyword terms matched, give it a tiny score if file isn't empty
-        if (relevanceScore === 0 && content.length > 10) {
-          relevanceScore = 0.1; 
+        if (relevanceScore === 0 && doc.content.length > 10) {
+          relevanceScore = 0.1;
         }
 
         if (relevanceScore > 0) {
-          // Extract a snippet
-          const snippet = content.slice(0, 300) + (content.length > 300 ? "..." : "");
-          matches.push({ filename: file, relevance: relevanceScore, snippet });
-          
-          combinedContext += `--- DOCUMENT: ${file} ---\n${content}\n\n`;
+          const snippet = doc.content.slice(0, 300) + (doc.content.length > 300 ? "..." : "");
+          matches.push({ filename: doc.name, relevance: relevanceScore, snippet });
+          combinedContext += `--- DOCUMENT: ${doc.name} ---\n${doc.content}\n\n`;
         }
       }
 
-      // Sort by relevance descending
       matches.sort((a, b) => b.relevance - a.relevance);
 
-      return NextResponse.json({
-        success: true,
-        context: combinedContext.trim(),
-        matches
-      });
+      return NextResponse.json({ success: true, context: combinedContext.trim(), matches });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
   }
 }
