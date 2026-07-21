@@ -1,11 +1,26 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
-import { GET, POST } from "@/app/api/knowledge/route";
 import { __setDbForTests, type Database } from "@/lib/db/client";
 import { documentChunks, documents, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
 import { resetRateLimiterForTests } from "@/lib/rate-limit";
 import { createTestDb } from "../helpers/testDb";
+
+// /api/knowledge now requires an authenticated session (see
+// app/api/knowledge/route.ts) — mock it so these tests keep exercising the
+// document/search logic without standing up a real auth flow. See
+// tests/api/orchestrate.test.ts for why vi.hoisted() is required here.
+const { mockAuth } = vi.hoisted(() => ({
+  mockAuth: vi.fn(async () => ({
+    user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
+    organizationId: "test-org",
+    organizationName: "Test Org",
+    role: "owner" as const
+  }))
+}));
+vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
+
+const { GET, POST } = await import("@/app/api/knowledge/route");
 
 let testDb: Database;
 
@@ -15,10 +30,6 @@ function postRequest(body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-}
-
-function getRequest() {
-  return new NextRequest("http://localhost/api/knowledge");
 }
 
 function oneHot(index: number, dims = EMBEDDING_DIMENSIONS): number[] {
@@ -46,6 +57,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   resetRateLimiterForTests();
   __setDbForTests(testDb);
+  mockAuth.mockClear();
   await testDb.delete(documentChunks);
   await testDb.delete(documents);
 });
@@ -55,9 +67,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("authentication", () => {
+  it("rejects an unauthenticated GET", async () => {
+    mockAuth.mockResolvedValueOnce(null as never);
+    const res = await GET();
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an unauthenticated POST", async () => {
+    mockAuth.mockResolvedValueOnce(null as never);
+    const res = await POST(postRequest({ action: "search", query: "x" }));
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("GET /api/knowledge", () => {
   it("returns an empty file list when no documents exist", async () => {
-    const res = await GET(getRequest());
+    const res = await GET();
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -68,7 +94,7 @@ describe("GET /api/knowledge", () => {
   it("lists documents that exist in the database", async () => {
     await testDb.insert(documents).values({ name: "standards.md", content: "# Standards" });
 
-    const res = await GET(getRequest());
+    const res = await GET();
     const data = await res.json();
 
     expect(data.files).toHaveLength(1);
@@ -231,7 +257,7 @@ describe("rate limiting", () => {
     }
     expect(lastWriteStatus).toBe(429);
 
-    const getRes = await GET(getRequest());
+    const getRes = await GET();
     expect(getRes.status).toBe(200);
   });
 });

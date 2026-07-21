@@ -1,0 +1,96 @@
+# Accounts, Organizations, and Access Control
+
+Phase 1 replaced the original no-login, browser-only BYOK model with real
+accounts. This doc covers what changed and how to run it locally — see
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) for how this fits the rest of the app
+and [`SECURITY.md`](./SECURITY.md) for the key-handling model this
+supersedes.
+
+## Model
+
+- **Users** sign up with email/password (`lib/actions/auth.ts`), hashed with
+  `bcryptjs` (`lib/crypto.ts`). Signup creates a new **organization** in the
+  same transaction and makes the signer its `owner` (`createUserAndOrg` in
+  `lib/db/queries.ts`).
+- **Memberships** link a user to an organization with a role (`owner`,
+  `admin`, `member`). A user can belong to more than one org (via invite
+  acceptance), but Phase 1 doesn't yet expose an org switcher — the session
+  resolves to the user's *first* membership (`lib/auth.ts`'s `jwt`
+  callback). Multi-org switching is a later-phase concern.
+- **`isPlatformAdmin`** on `users` is separate from any org role — it gates
+  the `/admin` Superadmin console (Phase 3), and isn't set by any UI yet
+  (there's no self-serve path to becoming a platform admin; set it directly
+  in the database for the operator account).
+- **Org-level BYOK**: one AI provider key per org+provider
+  (`org_provider_keys`, encrypted with AES-256-GCM), set by an owner/admin
+  under **Settings → Integrations** and shared by every member and every AI
+  feature in that org. No API key is ever sent from or stored in the
+  browser — `/api/orchestrate` resolves it server-side from the session's
+  organization (see `app/api/orchestrate/route.ts`).
+- **Invitations**: an owner/admin creates one from **Settings → Team**,
+  which generates a copyable link (`/invite/<token>`) — no email is sent
+  yet. Accepting it while logged out prompts login/signup first, then
+  completes the membership.
+- **Audit log**: every privileged mutation (password change, invite
+  created, org key set/removed) writes an `audit_log` row via
+  `writeAuditLog`. Nothing ever updates or deletes a row there.
+
+## Why Auth.js with no database adapter
+
+Auth.js's database-session adapter doesn't support the Credentials provider
+by design (it's a deliberate security constraint in Auth.js itself — a
+database session implies a server-trusted, revocable session store, which
+doesn't fit password-based sign-in the same way). Instead, `lib/auth.ts`
+uses the **JWT** session strategy: `authorize()` looks up the user via
+Drizzle and verifies the password with `bcryptjs`, and the `jwt`/`session`
+callbacks embed `userId`, `isPlatformAdmin`, the active `organizationId`,
+`organizationName`, and `role` into the token. This also sidesteps fighting
+the adapter's fixed table shape — `lib/db/schema.ts`'s `users` table is
+exactly what this app needs, nothing more.
+
+## Route protection: `proxy.ts`, not `middleware.ts`
+
+This repo pins a Next.js version (16.2.10) where the `middleware` file
+convention was renamed to `proxy` — see `AGENTS.md` and
+`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`.
+`middleware.ts` is silently ignored on this version; route protection lives
+in `proxy.ts` (default-exported `auth((req) => {...})`, matching the
+`export default function proxy(request) {...}` convention).
+
+`proxy.ts` only performs optimistic, JWT-derived redirects (unauthenticated
+→ `/login`, authenticated hitting `/login`/`/signup` → `/dashboard`,
+non-platform-admin hitting `/admin` → `/dashboard`). Per Next's own auth
+guide, proxy/middleware is never the sole authorization check — every
+server action and route handler re-verifies the session and role itself
+(see `requireSession`/`requireAdmin` in `lib/actions/settings.ts`, and the
+`auth()` calls in `app/api/orchestrate/route.ts` and
+`app/api/knowledge/route.ts`).
+
+## Local setup
+
+```bash
+cp .env.example .env.local
+openssl rand -base64 32   # → AUTH_SECRET
+openssl rand -base64 32   # → ENCRYPTION_KEY (different value)
+npm run db:migrate        # or: npx drizzle-kit migrate
+npm run dev
+```
+
+Visit `/signup` to create the first account/organization. To grant platform
+admin (Superadmin console) access, set `is_platform_admin = true` on that
+user's row directly in Postgres — there's no UI for this in Phase 1.
+
+## Known gaps (Phase 1)
+
+- No org switcher for users with multiple memberships (uses the first one).
+- Invitations aren't emailed — the link must be shared manually.
+- No password reset flow.
+- No rate limiting on login attempts specifically (the general per-user
+  rate limits in `lib/rate-limit.ts` don't yet cover `/api/auth/*`).
+- No dedicated integration test drives `signIn()`/`signOut()` end-to-end
+  (Auth.js's Credentials flow expects Next's real request-scoped
+  `cookies()`, which isn't available when calling route handlers directly
+  in Vitest the way `tests/api/*.test.ts` does for the other routes).
+  `tests/lib/queries.test.ts` covers the underlying data-access logic
+  (`createUserAndOrg`, invitations, org provider keys, audit log) against a
+  real embedded Postgres instead.

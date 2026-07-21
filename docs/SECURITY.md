@@ -1,29 +1,31 @@
 # Security Model & Review Notes
 
-## Key handling (by design)
+## Key handling (Phase 1+: org-level BYOK)
 
-This app is a **bring-your-own-key** tool with no backend account system:
+As of Phase 1 (see [`AUTH.md`](./AUTH.md)) this app has real accounts and
+organizations. The BYOK model moved from per-browser `localStorage` to
+**org-level, server-side, encrypted**:
 
-- API keys are entered in the Settings dialog (`app/page.tsx`) and stored in
-  the browser's `localStorage`, in plaintext, under `nexus_key_openai`,
-  `nexus_key_anthropic`, `nexus_key_google`.
-- Every `/api/orchestrate` call sends the relevant key back to the server in
-  the request body; the server never persists keys and holds no keys of its
-  own (no `.env` / server-side credentials are used anywhere).
-- The server-side calls to OpenAI/Anthropic/Gemini in `lib/agents.ts` exist
-  only to avoid CORS issues calling provider APIs directly from the browser.
+- An org owner/admin enters the org's AI provider key once, under
+  **Settings → Integrations**. It's encrypted at rest (AES-256-GCM,
+  `lib/crypto.ts`) in `org_provider_keys`, keyed by `ENCRYPTION_KEY`, and
+  shared by every member of that org.
+- `/api/orchestrate` requires an authenticated session and resolves the
+  active key server-side via `getOrgProviderKey(session.organizationId,
+  provider)` — the browser never sends a provider key, and no key is ever
+  stored client-side.
+- The server-side calls to OpenAI/Anthropic/Gemini in `lib/agents.ts` still
+  exist to avoid CORS issues calling provider APIs directly from the browser.
 - The Knowledge Base's optional embedding key (`embed: { provider, key }` on
-  `/api/knowledge`) follows the same per-request BYOK model — it's never
-  persisted server-side either, only used inline to call the embeddings API
-  for that one request.
+  `/api/knowledge`) still follows a per-request BYOK model — it's a
+  narrower, advanced feature (semantic search) not yet promoted to the
+  org-level key store; never persisted server-side, only used inline for
+  that one request.
 
-**Implication:** anyone with script access to the page (XSS) or physical/
-session access to the browser profile can read the keys out of
-`localStorage`. Anyone who can reach the deployed origin over the network
-can also spend those keys, since neither API route requires
-authentication. This is an acceptable trade-off for a single-user local
-tool, but this app **should not be deployed to a shared/public URL without
-adding authentication in front of it** — see "Gaps" below.
+**Implication:** a compromised `ENCRYPTION_KEY` (or direct database access)
+exposes every org's provider keys — treat it as seriously as the keys
+themselves, and never commit it. Losing/rotating `ENCRYPTION_KEY` makes
+existing encrypted keys unreadable (org admins would need to re-enter them).
 
 ## Findings from this review
 
@@ -90,16 +92,19 @@ adding authentication in front of it** — see "Gaps" below.
    exactly request 31 with the 30/min limit, `GET` unaffected) and covered
    by a regression test.
 
+8. **No authentication on `/api/knowledge` or `/api/orchestrate`.** ~~If
+   this app is ever deployed somewhere reachable by more than the local
+   user, anyone can read/write/delete knowledge-base files and burn the
+   caller's configured LLM quota.~~ **Fixed in Phase 1** (see
+   [`AUTH.md`](./AUTH.md)): both routes now require an authenticated
+   session (`auth()`), and rate limiting keys off the authenticated user id
+   instead of client IP.
+
 ### Open — not fixed in this pass
 
-8. **No authentication on `/api/knowledge` or `/api/orchestrate`.** If this
-   app is ever deployed somewhere reachable by more than the local user,
-   anyone can read/write/delete knowledge-base files and burn the caller's
-   configured LLM quota (the new rate limits slow this down but don't stop
-   it). This needs a deliberate choice of auth mechanism (shared secret,
-   session, reverse-proxy) plus matching client-side UI, so it's left as a
-   decision for before any non-local deployment rather than half-wired in
-   this pass.
+See [`AUTH.md`](./AUTH.md)'s "Known gaps" for the auth-specific items (no
+org switcher, no invite emails, no password reset, no login-attempt rate
+limiting). Nothing else is currently tracked here.
 
 ## What's already safe
 
@@ -118,9 +123,9 @@ adding authentication in front of it** — see "Gaps" below.
 
 | Guardrail | Where | Limit |
 |---|---|---|
-| Rate limit | `/api/orchestrate` | 20 req/min per client key |
-| Rate limit | `GET /api/knowledge` | 60 req/min per client key |
-| Rate limit | `POST /api/knowledge` | 30 req/min per client key |
+| Rate limit | `/api/orchestrate` | 20 req/min per authenticated user |
+| Rate limit | `GET /api/knowledge` | 60 req/min per authenticated user |
+| Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user |
 | `provider` allowlist | `/api/orchestrate` | `openai` \| `anthropic` \| `google` |
 | `prompt` length | `/api/orchestrate` | 20,000 chars |
 | `context` length | `/api/orchestrate` | 100,000 chars |

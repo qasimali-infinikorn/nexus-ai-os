@@ -1,8 +1,29 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { POST } from "@/app/api/orchestrate/route";
 import { resetRateLimiterForTests } from "@/lib/rate-limit";
 import { readNdjson } from "../helpers/stream";
+
+// /api/orchestrate now resolves both the session and the provider key from
+// the database (org-level BYOK — see docs/AUTH.md) rather than trusting a
+// client-supplied `keys` object. Mock both at the module boundary so these
+// tests stay focused on request validation/streaming behavior without
+// standing up a real Postgres connection. vi.hoisted() is required here:
+// vi.mock() factories run before this file's own top-level statements, so a
+// plain `const` referenced inside one would hit the temporal dead zone.
+const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
+  mockAuth: vi.fn(async () => ({
+    user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
+    organizationId: "test-org",
+    organizationName: "Test Org",
+    role: "owner" as const
+  })),
+  mockGetOrgProviderKey:
+    vi.fn<(orgId: string, provider: string) => Promise<string | undefined>>(() => Promise.resolve("sk-test"))
+}));
+vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
+vi.mock("@/lib/db/queries", () => ({ getOrgProviderKey: (...args: [string, string]) => mockGetOrgProviderKey(...args) }));
+
+const { POST } = await import("@/app/api/orchestrate/route");
 
 function makeRequest(body: unknown) {
   return new NextRequest("http://localhost/api/orchestrate", {
@@ -16,17 +37,28 @@ const validBase = {
   provider: "openai",
   model: "gpt-4o",
   prompt: "Review this code",
-  agentType: "eng_lead",
-  keys: { openai: "sk-test" }
+  agentType: "eng_lead"
 };
 
 beforeEach(() => {
   resetRateLimiterForTests();
   vi.stubGlobal("fetch", vi.fn());
+  mockGetOrgProviderKey.mockClear();
+  mockGetOrgProviderKey.mockResolvedValue("sk-test");
+  mockAuth.mockClear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("POST /api/orchestrate - authentication", () => {
+  it("rejects an unauthenticated request", async () => {
+    mockAuth.mockResolvedValueOnce(null as never);
+    const res = await POST(makeRequest(validBase));
+    expect(res.status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/orchestrate - validation", () => {
@@ -71,11 +103,12 @@ describe("POST /api/orchestrate - validation", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("rejects a request missing the provider's API key", async () => {
-    const res = await POST(makeRequest({ ...validBase, keys: {} }));
+  it("rejects a request when the org has no key configured for the provider", async () => {
+    mockGetOrgProviderKey.mockResolvedValueOnce(undefined);
+    const res = await POST(makeRequest(validBase));
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.message).toMatch(/API Key/);
+    expect(data.message).toMatch(/hasn't configured/);
     expect(fetch).not.toHaveBeenCalled();
   });
 

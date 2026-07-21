@@ -4,7 +4,8 @@ import { getDb } from "@/lib/db/client";
 import { documentChunks, documents } from "@/lib/db/schema";
 import { chunkText } from "@/lib/chunk";
 import { getEmbeddings } from "@/lib/embeddings";
-import { getClientKey, rateLimit } from "@/lib/rate-limit";
+import { auth } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   MAX_KNOWLEDGE_CONTENT_BYTES,
   MAX_KNOWLEDGE_NAME_LENGTH,
@@ -24,9 +25,16 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function checkRateLimit(req: Request, bucket: "read" | "write", limit: number): NextResponse | null {
-  const clientKey = getClientKey(req);
-  const { allowed, retryAfterMs } = rateLimit(`knowledge:${bucket}:${clientKey}`, limit, RATE_WINDOW_MS);
+async function requireSessionUserId(): Promise<string | NextResponse> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+  }
+  return session.user.id;
+}
+
+function checkRateLimit(userId: string, bucket: "read" | "write", limit: number): NextResponse | null {
+  const { allowed, retryAfterMs } = rateLimit(`knowledge:${bucket}:${userId}`, limit, RATE_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "Rate limit exceeded. Please wait before trying again." },
@@ -51,8 +59,11 @@ function parseEmbedConfig(value: unknown): EmbedConfig | null {
 }
 
 // GET: List all documents stored in the knowledge base
-export async function GET(req: NextRequest) {
-  const limited = checkRateLimit(req, "read", READ_RATE_LIMIT);
+export async function GET() {
+  const userId = await requireSessionUserId();
+  if (userId instanceof NextResponse) return userId;
+
+  const limited = checkRateLimit(userId, "read", READ_RATE_LIMIT);
   if (limited) return limited;
 
   try {
@@ -73,7 +84,10 @@ export async function GET(req: NextRequest) {
 
 // POST: Handles add file, delete file, and query search
 export async function POST(req: NextRequest) {
-  const limited = checkRateLimit(req, "write", WRITE_RATE_LIMIT);
+  const userId = await requireSessionUserId();
+  if (userId instanceof NextResponse) return userId;
+
+  const limited = checkRateLimit(userId, "write", WRITE_RATE_LIMIT);
   if (limited) return limited;
 
   try {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callLLM, AGENTS, APIKeys } from "@/lib/agents";
-import { getClientKey, rateLimit } from "@/lib/rate-limit";
+import { callLLM, AGENTS } from "@/lib/agents";
+import { auth } from "@/lib/auth";
+import { getOrgProviderKey } from "@/lib/db/queries";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   MAX_CONTEXT_LENGTH,
   MAX_MODEL_LENGTH,
@@ -21,8 +23,12 @@ function getErrorMessage(error: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
-  const clientKey = getClientKey(req);
-  const { allowed, retryAfterMs } = rateLimit(`orchestrate:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const session = await auth();
+  if (!session?.user?.id || !session.organizationId) {
+    return NextResponse.json({ type: "error", message: "Authentication required." }, { status: 401 });
+  }
+
+  const { allowed, retryAfterMs } = rateLimit(`orchestrate:${session.user.id}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { type: "error", message: "Rate limit exceeded. Please wait before trying again." },
@@ -37,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "error", message: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { provider, model, prompt, agentType, keys, context } = body;
+  const { provider, model, prompt, agentType, context } = body;
 
   if (!isValidProvider(provider)) {
     return NextResponse.json({ type: "error", message: `Unsupported provider: ${provider}` }, { status: 400 });
@@ -67,11 +73,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "error", message: `Unknown agent type: ${agentType}` }, { status: 400 });
   }
 
-  const apiKeys = (keys ?? {}) as APIKeys;
-  const activeKey = apiKeys[provider as keyof APIKeys];
+  // Org-level BYOK: the provider key lives encrypted in Postgres, set once
+  // by an org admin under Settings → Integrations, and shared by every
+  // member of the org — not supplied per-request by the browser anymore.
+  const activeKey = await getOrgProviderKey(session.organizationId, provider);
   if (!activeKey) {
     return NextResponse.json(
-      { type: "error", message: `API Key for provider "${provider}" is missing. Please configure it in Settings.` },
+      {
+        type: "error",
+        message: `Your organization hasn't configured a "${provider}" API key yet. Ask an admin to add it under Settings → Integrations.`
+      },
       { status: 400 }
     );
   }
