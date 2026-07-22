@@ -3649,3 +3649,12 @@ a.list-row:hover, .list-row.clickable:hover { background: var(--overlay-hover); 
     padding-right: 20px;
   }
 }
+
+.admin-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-content .admin-table-card .card-head {
+  padding: 1rem 1.25rem 0.75rem;
+}

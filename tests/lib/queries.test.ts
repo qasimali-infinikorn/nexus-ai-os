@@ -16,7 +16,13 @@ import {
   writeAuditLog,
   slugify,
   getPlatformOverviewStats,
-  setUserPlatformAdmin
+  setUserPlatformAdmin,
+  listTenantsForAdmin,
+  setOrganizationStatus,
+  createOrganizationAsAdmin,
+  writePlatformAuditEvent,
+  listPlatformAuditEvents,
+  getTenantDetailForAdmin
 } from "@/lib/db/queries";
 import { organizations, users, memberships, invitations, auditLog } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/testDb";
@@ -268,5 +274,86 @@ describe("platform admin helpers", () => {
 
     const revoked = await setUserPlatformAdmin("Admin@example.com", false);
     expect(revoked?.isPlatformAdmin).toBe(false);
+  });
+
+  it("lists tenants with seat counts and status filters", async () => {
+    const first = await createUserAndOrg({
+      email: "t1@example.com",
+      name: "T1",
+      passwordHash: "h",
+      organizationName: "Tenant One"
+    });
+    await createUserAndOrg({
+      email: "t2@example.com",
+      name: "T2",
+      passwordHash: "h",
+      organizationName: "Tenant Two"
+    });
+    await setOrganizationStatus(first.organization.id, "active");
+
+    const all = await listTenantsForAdmin("all");
+    expect(all).toHaveLength(2);
+    expect(all.find((t) => t.id === first.organization.id)?.seatCount).toBe(1);
+    expect(all.find((t) => t.id === first.organization.id)?.status).toBe("active");
+
+    const activeOnly = await listTenantsForAdmin("active");
+    expect(activeOnly).toHaveLength(1);
+    expect(activeOnly[0].name).toBe("Tenant One");
+  });
+
+  it("creates a tenant org and records a platform audit event", async () => {
+    const admin = await createUserAndOrg({
+      email: "ops@example.com",
+      name: "Ops",
+      passwordHash: "h",
+      organizationName: "Ops Org"
+    });
+
+    const org = await createOrganizationAsAdmin({
+      name: "Acme Corp",
+      planTier: "business",
+      status: "active"
+    });
+    expect(org.slug).toMatch(/^acme-corp/);
+
+    const { token } = await createInvitation({
+      organizationId: org.id,
+      email: "owner@acme.test",
+      role: "owner",
+      invitedByUserId: admin.user.id
+    });
+    expect(token.length).toBeGreaterThan(8);
+
+    await writePlatformAuditEvent({
+      actorUserId: admin.user.id,
+      action: "platform.tenant.create",
+      targetType: "organization",
+      targetId: org.id,
+      metadata: { name: org.name }
+    });
+
+    const events = await listPlatformAuditEvents({ action: "platform.tenant.create" });
+    expect(events).toHaveLength(1);
+    expect(events[0].actorEmail).toBe("ops@example.com");
+    expect(events[0].targetId).toBe(org.id);
+
+    const detail = await getTenantDetailForAdmin(org.id);
+    expect(detail?.pendingInvites).toBe(1);
+    expect(detail?.members).toHaveLength(0);
+  });
+
+  it("suspends and restores an organization", async () => {
+    const { organization } = await createUserAndOrg({
+      email: "s@example.com",
+      name: "S",
+      passwordHash: "h",
+      organizationName: "Suspendable"
+    });
+
+    const suspended = await setOrganizationStatus(organization.id, "suspended");
+    expect(suspended?.status).toBe("suspended");
+
+    const restored = await setOrganizationStatus(organization.id, "active");
+    expect(restored?.status).toBe("active");
   });
 });

@@ -2,7 +2,7 @@
 // Thin wrappers over Drizzle so route handlers/server actions stay small —
 // see lib/db/client.ts for the getDb() lazy-connection pattern these build on.
 
-import { and, asc, eq, gte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, max, sql } from "drizzle-orm";
 import { getDb } from "./client";
 import { encryptSecret, decryptSecret, generateToken } from "../crypto";
 import {
@@ -20,10 +20,13 @@ import {
   type Membership,
   type MembershipRole,
   type OrgKeyProvider,
+  type OrganizationPlanTier,
+  type OrganizationStatus,
   type ProjectTask,
   type TaskStatus,
   type Project,
-  type ProjectStatus
+  type ProjectStatus,
+  type AuditLogEntry
 } from "./schema";
 // Aliased: `projects` is the Drizzle table above; these are the seed rows.
 import { boardTaskSeeds, projects as projectSeeds } from "../workspace/content";
@@ -204,6 +207,173 @@ export async function setUserPlatformAdmin(email: string, enabled: boolean): Pro
     .where(eq(users.email, email.toLowerCase()))
     .returning();
   return user;
+}
+
+export type TenantAdminFilter = "all" | OrganizationStatus;
+
+export type TenantAdminRow = {
+  id: string;
+  name: string;
+  slug: string;
+  planTier: OrganizationPlanTier;
+  status: OrganizationStatus;
+  seatCount: number;
+  createdAt: Date;
+  lastActiveAt: Date | null;
+};
+
+/** Superadmin tenant table: orgs + seat counts + latest org-scoped audit activity. */
+export async function listTenantsForAdmin(filter: TenantAdminFilter = "all"): Promise<TenantAdminRow[]> {
+  const db = getDb();
+  const statusFilter = filter === "all" ? undefined : eq(organizations.status, filter);
+
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+      planTier: organizations.planTier,
+      status: organizations.status,
+      createdAt: organizations.createdAt,
+      seatCount: sql<number>`count(distinct ${memberships.id})::int`,
+      lastActiveAt: sql<Date | null>`max(${auditLog.createdAt})`
+    })
+    .from(organizations)
+    .leftJoin(memberships, eq(memberships.organizationId, organizations.id))
+    .leftJoin(auditLog, eq(auditLog.organizationId, organizations.id))
+    .where(statusFilter)
+    .groupBy(organizations.id)
+    .orderBy(desc(organizations.createdAt));
+
+  return rows;
+}
+
+export async function getTenantDetailForAdmin(organizationId: string): Promise<
+  | {
+      organization: Organization;
+      members: { id: string; name: string; email: string; role: MembershipRole; createdAt: Date }[];
+      pendingInvites: number;
+    }
+  | undefined
+> {
+  const organization = await getOrganizationById(organizationId);
+  if (!organization) return undefined;
+
+  const db = getDb();
+  const members = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: memberships.role,
+      createdAt: memberships.createdAt
+    })
+    .from(memberships)
+    .innerJoin(users, eq(memberships.userId, users.id))
+    .where(eq(memberships.organizationId, organizationId))
+    .orderBy(asc(memberships.createdAt));
+
+  const [inviteCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(invitations)
+    .where(and(eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt)));
+
+  return {
+    organization,
+    members,
+    pendingInvites: inviteCount?.count ?? 0
+  };
+}
+
+export async function setOrganizationStatus(
+  organizationId: string,
+  status: OrganizationStatus
+): Promise<Organization | undefined> {
+  const db = getDb();
+  const [organization] = await db
+    .update(organizations)
+    .set({ status })
+    .where(eq(organizations.id, organizationId))
+    .returning();
+  return organization;
+}
+
+export async function createOrganizationAsAdmin(params: {
+  name: string;
+  planTier: OrganizationPlanTier;
+  status: OrganizationStatus;
+}): Promise<Organization> {
+  const db = getDb();
+  const slug = await uniqueSlug(db, params.name);
+  const [organization] = await db
+    .insert(organizations)
+    .values({
+      name: params.name,
+      slug,
+      planTier: params.planTier,
+      status: params.status
+    })
+    .returning();
+  return organization;
+}
+
+/**
+ * Platform-scoped audit rows live in `audit_log` with `organization_id` null
+ * (see schema comment). Prefer action names prefixed with `platform.`.
+ */
+export async function writePlatformAuditEvent(entry: {
+  actorUserId: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await writeAuditLog({
+    organizationId: null,
+    actorUserId: entry.actorUserId,
+    action: entry.action,
+    targetType: entry.targetType,
+    targetId: entry.targetId,
+    metadata: entry.metadata
+  });
+}
+
+export type PlatformAuditEvent = AuditLogEntry & {
+  actorName: string | null;
+  actorEmail: string | null;
+};
+
+export async function listPlatformAuditEvents(params?: {
+  limit?: number;
+  action?: string;
+}): Promise<PlatformAuditEvent[]> {
+  const db = getDb();
+  const limit = Math.min(Math.max(params?.limit ?? 50, 1), 200);
+  const conditions = [isNull(auditLog.organizationId)];
+  if (params?.action) {
+    conditions.push(eq(auditLog.action, params.action));
+  }
+
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      organizationId: auditLog.organizationId,
+      actorUserId: auditLog.actorUserId,
+      action: auditLog.action,
+      targetType: auditLog.targetType,
+      targetId: auditLog.targetId,
+      metadata: auditLog.metadata,
+      createdAt: auditLog.createdAt,
+      actorName: users.name,
+      actorEmail: users.email
+    })
+    .from(auditLog)
+    .leftJoin(users, eq(auditLog.actorUserId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
+
+  return rows;
 }
 
 // Returns the decrypted plaintext key, or undefined if the org hasn't

@@ -26,3 +26,19 @@ export async function requirePlatformAdmin(): Promise<{ session: Session; user: 
 
   return { session, user };
 }
+
+/** Same dual-check as `requirePlatformAdmin`, but throws for server actions. */
+export async function assertPlatformAdmin(): Promise<{ session: Session; user: User }> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    throw new Error("Authentication required.");
+  }
+  if (!session.user.isPlatformAdmin) {
+    throw new Error("Platform admin required.");
+  }
+  const user = await getUserById(session.user.id);
+  if (!user?.isPlatformAdmin) {
+    throw new Error("Platform admin required.");
+  }
+  return { session, user };
+}

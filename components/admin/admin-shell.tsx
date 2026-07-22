@@ -17,13 +17,18 @@ function initials(name: string): string {
 
 export function AdminShell({
   userName,
+  tenantCount,
   children
 }: {
   userName: string;
+  tenantCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const nav = ADMIN_NAV.map((item) =>
+    item.href === "/admin/tenants" && tenantCount != null ? { ...item, badge: tenantCount } : item
+  );
 
   return (
     <div className="admin-root" data-theme="dark">
@@ -64,7 +69,7 @@ export function AdminShell({
             <nav aria-label="Admin">
               <div className="sidebar-nav-group">
                 <p className="sidebar-nav-group-label">Control plane</p>
-                {ADMIN_NAV.map((item) => {
+                {nav.map((item) => {
                   const active =
                     item.href === "/admin"
                       ? pathname === "/admin"

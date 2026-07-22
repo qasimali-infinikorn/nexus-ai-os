@@ -78,9 +78,10 @@ Proposed tables (Drizzle migrations):
 2. **`feature_flag_tenants`** (optional, for per-tenant overrides)
    - `flag_key`, `organization_id`, `enabled`
 
-3. **`platform_audit_events`**
-   - `id`, `actor_user_id`, `action`, `target_type`, `target_id`, `meta` (jsonb), `created_at`
+3. **`platform_audit_events`** → **implemented via `audit_log`**
+   - Rows with `organization_id` null and `action` like `platform.tenant.*`
    - Append-only; no update/delete API
+   - Avoids a duplicate table; org-scoped events still use the same table with an org id
 
 4. **`tenant_billing_snapshot`** (or integrate Stripe later)
    - Phase 3a: demo/read models from org plan fields
@@ -164,9 +165,13 @@ Stub routes also exist for Tenants / Flags / Billing / Status / Audit (honest em
 
 ### Phase 3.1 — Tenants + Audit (3–5 days)
 
-- [ ] Org list/filter from real `organizations` + membership counts
-- [ ] Status/plan columns + suspend action
-- [ ] `platform_audit_events` writer + Audit page reader
+- [x] Org list/filter from real `organizations` + membership counts
+- [x] Status/plan columns + suspend action
+- [x] Platform audit writer + Audit page reader
+
+Platform audit events are stored in existing `audit_log` with `organization_id` null
+(actions prefixed `platform.*`) rather than a separate `platform_audit_events` table.
+Add-tenant creates an org + owner invite; impersonation remains deferred.
 
 ### Phase 3.2 — Feature flags (2–3 days)
 
@@ -198,10 +203,11 @@ Stub routes also exist for Tenants / Flags / Billing / Status / Audit (honest em
 
 ## 9. Success criteria
 
-- Platform admin can open `/admin` and see live tenant count from DB
-- Non-admin cannot open `/admin` (proxy + layout)
-- Flag toggle is audited and reflected for a test org within one request cycle
-- Mockup IA (6 nav items) is fully routed, even if Billing/Status start as honest empty states
+- [x] Platform admin can open `/admin` and see live tenant count from DB
+- [x] Non-admin cannot open `/admin` (proxy + layout)
+- [ ] Flag toggle is audited and reflected for a test org within one request cycle
+- [x] Mockup IA (6 nav items) is fully routed, even if Billing/Status start as honest empty states
+- [x] Tenant list filters + suspend/restore write platform audit events
 
 ---
 
