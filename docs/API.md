@@ -54,6 +54,27 @@ Returns `503` if the secret is unset, `401` if it does not match (timing-safe),
 
 Successful incident (and failed deploy) events also create inbox notifications.
 
+## `POST /api/webhooks/github`
+
+GitHub App / repository webhook for PR activity → **Reviews** / **Mentions**
+notifications.
+
+- URL must include `?organizationId=<uuid>`
+- Auth: `X-Hub-Signature-256` HMAC-SHA256 of the raw body using
+  `GITHUB_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
+- Handled events: `pull_request` (opened / review_requested / closed),
+  `pull_request_review` (submitted), PR/issue comments (`created`)
+- `ping` is acknowledged with `{ ok: true, ignored: true }`
+
+## `POST /api/webhooks/jira`
+
+Atlassian Jira webhook → **Reviews** (issue updates) / **Mentions** (comments).
+
+- URL must include `?organizationId=<uuid>`
+- Auth: `Authorization: Bearer …` or `x-nexus-webhook-secret` using
+  `JIRA_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
+- Optional `JIRA_BASE_URL` for browse links (`{base}/browse/KEY`)
+
 ## `POST /api/orchestrate`
 
 Streams newline-delimited JSON (one `JSON.stringify(event) + "\n"` per

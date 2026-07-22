@@ -59,4 +59,16 @@ describe("guardrail harness", () => {
     expect(route).toContain("timingSafeEqual");
     expect(route).toContain("rateLimit");
   });
+
+  it("documents GitHub HMAC and Jira webhook routes", () => {
+    const github = fs.readFileSync(
+      path.join(process.cwd(), "app/api/webhooks/github/route.ts"),
+      "utf8"
+    );
+    const jira = fs.readFileSync(path.join(process.cwd(), "app/api/webhooks/jira/route.ts"), "utf8");
+    expect(github).toContain("x-hub-signature-256");
+    expect(github).toContain("GITHUB_WEBHOOK_SECRET");
+    expect(jira).toContain("JIRA_WEBHOOK_SECRET");
+    expect(jira).toContain("organizationId");
+  });
 });

@@ -82,9 +82,32 @@ export default async function IntegrationsSettingsPage({
       </section>
 
       <section className="stack-md">
+        <p className="section-label">Review webhooks</p>
+        <article className="card card-pad stack-md">
+          <p className="dim" style={{ fontSize: "var(--fs-body)", lineHeight: 1.55, margin: 0 }}>
+            Point GitHub or Jira at these URLs (replace the org id). Notifications land in the inbox and
+            honor Settings → Notifications for Reviews / Mentions.
+          </p>
+          <div className="stack" style={{ gap: 8 }}>
+            <code className="meta" style={{ display: "block", wordBreak: "break-all" }}>
+              /api/webhooks/github?organizationId={session.organizationId}
+            </code>
+            <code className="meta" style={{ display: "block", wordBreak: "break-all" }}>
+              /api/webhooks/jira?organizationId={session.organizationId}
+            </code>
+          </div>
+          <p className="meta" style={{ margin: 0 }}>
+            Secrets: <code>GITHUB_WEBHOOK_SECRET</code> / <code>JIRA_WEBHOOK_SECRET</code> (or shared{" "}
+            <code>WEBHOOK_SECRET</code>). Optional <code>JIRA_BASE_URL</code> for browse links.
+          </p>
+        </article>
+      </section>
+
+      <section className="stack-md">
         <p className="section-label">Third-party integrations</p>
         <DemoNotice>
-          Connection states below are demo content — no OAuth apps are registered yet. GitHub lands next.
+          OAuth connect for GitHub/Jira/Slack is still demo UI. Review activity already works via the webhooks
+          above.
         </DemoNotice>
         <div className="grid-3">
           {integrationCatalog.map((i) => (
