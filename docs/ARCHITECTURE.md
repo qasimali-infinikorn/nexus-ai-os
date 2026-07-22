@@ -102,7 +102,7 @@ state; each call is a single stateless system+user prompt round trip.
 | `proposal` | Proposal Studio |
 | `research` | Research Center |
 | `documentation` | (defined, not yet wired to a UI page) |
-| `client_meeting` | (defined, not yet wired to a UI page — planned for Meetings, Phase 2) |
+| `client_meeting` | Meetings page + AI Workspace prep links (Phase 2) |
 | `knowledge` | Knowledge Base (RAG) |
 
 ## Knowledge Base / RAG (`app/api/knowledge/route.ts`)
@@ -233,6 +233,6 @@ is a separate decision from the API-layer harness added here.
 - No background job/queue system — embedding generation happens inline in
   the request (synchronous), so a very large document's `add` call will be
   slow proportional to its chunk count.
-- Agents/DevOps/Projects/Meetings/Notifications are real routes with honest
-  empty states, not real data yet — Phase 2.
+- Agents / DevOps / Meetings / Notifications / Dashboard are DB-backed
+  (Phase 2). Calendar OAuth and third-party review sync remain optional.
 - Superadmin console at `/admin` (`isPlatformAdmin`-gated): tenants, flags, billing empty-state, health probes, audit.
