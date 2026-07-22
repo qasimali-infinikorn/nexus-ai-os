@@ -83,7 +83,30 @@ export async function createNotification(params: {
   href?: string;
   tone?: string;
   badge?: string;
-}): Promise<Notification> {
+  /** Prefs event id override (defaults from kind). */
+  prefsEvent?: string;
+}): Promise<Notification | null> {
+  const eventId =
+    params.prefsEvent ??
+    ({
+      Incidents: "incidents",
+      Reviews: "pr_reviews",
+      Mentions: "mentions",
+      Agents: "agent_runs"
+    }[params.kind] as string);
+
+  // Targeted notifications honor the recipient's in-app preference.
+  if (params.userId) {
+    const { getUserSettings } = await import("./queries");
+    const { DEFAULT_NOTIFICATION_PREFS } = await import("../workspace/settings-content");
+    const { notificationPrefs } = await getUserSettings(params.userId, params.organizationId);
+    const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...notificationPrefs };
+    const channel = merged[eventId] ?? DEFAULT_NOTIFICATION_PREFS[eventId];
+    if (channel && channel.inApp === false) {
+      return null;
+    }
+  }
+
   const db = getDb();
   const [row] = await db
     .insert(notifications)

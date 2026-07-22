@@ -26,12 +26,17 @@ import {
   meetings,
   memberships,
   notifications,
+  orgCustomAgents,
   organizations,
   projectTasks,
   projects,
+  userOauthConnections,
+  userSettings,
   users
 } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/testDb";
+import { saveUserSettings } from "@/lib/db/queries";
+import { createOrgCustomAgent, getOrgCustomAgent } from "@/lib/db/custom-agents";
 
 let testDb: Database;
 
@@ -50,6 +55,9 @@ beforeEach(async () => {
   await testDb.delete(incidents);
   await testDb.delete(projectTasks);
   await testDb.delete(projects);
+  await testDb.delete(orgCustomAgents);
+  await testDb.delete(userOauthConnections);
+  await testDb.delete(userSettings);
   await testDb.delete(featureFlagTenants);
   await testDb.delete(featureFlags);
   await testDb.delete(auditLog);
@@ -169,5 +177,61 @@ describe("Phase 2 workspace data", () => {
     });
 
     expect(await countOpenIncidents(organization.id)).toBe(1);
+  });
+
+  it("skips in-app notification when the user disabled that prefs event", async () => {
+    const { organization, user } = await createUserAndOrg({
+      email: "prefs@example.com",
+      name: "P",
+      passwordHash: "h",
+      organizationName: "Prefs Co"
+    });
+
+    await saveUserSettings({
+      userId: user.id,
+      organizationId: organization.id,
+      notificationPrefs: {
+        agent_runs: { inApp: false, email: false, slack: false }
+      }
+    });
+
+    const skipped = await createNotification({
+      organizationId: organization.id,
+      userId: user.id,
+      kind: "Agents",
+      title: "Agent done",
+      body: "ok"
+    });
+    expect(skipped).toBeNull();
+
+    const kept = await createNotification({
+      organizationId: organization.id,
+      userId: user.id,
+      kind: "Mentions",
+      title: "Hi",
+      body: "there"
+    });
+    expect(kept).not.toBeNull();
+  });
+
+  it("creates org custom agents with unique keys", async () => {
+    const { organization, user } = await createUserAndOrg({
+      email: "ca@example.com",
+      name: "C",
+      passwordHash: "h",
+      organizationName: "Custom Co"
+    });
+
+    const a = await createOrgCustomAgent({
+      organizationId: organization.id,
+      createdByUserId: user.id,
+      name: "Security Reviewer",
+      description: "Looks for OWASP issues in diffs.",
+      systemPrompt: "You are a security specialist. Focus on injection, authz, and secrets."
+    });
+    expect(a.key).toBe("custom_security_reviewer");
+
+    const found = await getOrgCustomAgent(organization.id, a.key);
+    expect(found?.name).toBe("Security Reviewer");
   });
 });

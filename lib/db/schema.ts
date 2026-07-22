@@ -414,10 +414,15 @@ export const meetings = pgTable(
     needsPrep: boolean("needs_prep").notNull().default(true),
     agenda: text("agenda"),
     source: text("source").notNull().default("manual"),
+    /** External calendar event id when source is google / microsoft. */
+    externalId: text("external_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [index("meetings_org_starts_idx").on(table.organizationId, table.startsAt)]
+  (table) => [
+    index("meetings_org_starts_idx").on(table.organizationId, table.startsAt),
+    uniqueIndex("meetings_org_external_unique_idx").on(table.organizationId, table.externalId)
+  ]
 );
 
 export type Meeting = typeof meetings.$inferSelect;
@@ -522,3 +527,61 @@ export const incidents = pgTable(
 );
 
 export type Incident = typeof incidents.$inferSelect;
+
+// User-linked OAuth connections (calendar, etc.) — separate from Auth.js login.
+export const OAUTH_CONNECTION_PROVIDERS = ["google_calendar"] as const;
+export type OAuthConnectionProvider = (typeof OAUTH_CONNECTION_PROVIDERS)[number];
+
+export const userOauthConnections = pgTable(
+  "user_oauth_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: OAUTH_CONNECTION_PROVIDERS }).notNull(),
+    accountEmail: text("account_email"),
+    // AES-256-GCM ciphertext (lib/crypto.ts)
+    encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+    scopes: text("scopes"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("user_oauth_connections_user_org_provider_idx").on(
+      table.userId,
+      table.organizationId,
+      table.provider
+    )
+  ]
+);
+
+export type UserOauthConnection = typeof userOauthConnections.$inferSelect;
+
+/** Org-defined specialist agents (in addition to built-in AGENTS). */
+export const orgCustomAgents = pgTable(
+  "org_custom_agents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    systemPrompt: text("system_prompt").notNull(),
+    accent: text("accent").notNull().default("blue"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("org_custom_agents_org_key_unique_idx").on(table.organizationId, table.key),
+    index("org_custom_agents_org_idx").on(table.organizationId)
+  ]
+);
+
+export type OrgCustomAgent = typeof orgCustomAgents.$inferSelect;

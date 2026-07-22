@@ -1,17 +1,33 @@
 import { auth } from "@/lib/auth";
 import { Avatar, Pill, DemoNotice } from "@/components/workspace/ui";
 import { listOrgProviderKeyStatus } from "@/lib/db/queries";
+import {
+  getGoogleCalendarConnection,
+  googleCalendarConfigured
+} from "@/lib/integrations/google-calendar";
+import { GoogleCalendarCard } from "@/components/integrations/google-calendar-card";
 import { OrgKeyRow } from "./org-key-row";
 import { integrationCatalog } from "@/lib/workspace/settings-content";
 
-const PROVIDER_LABELS: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic (Claude)",
+  google: "Google (Gemini)"
+};
 
-export default async function IntegrationsSettingsPage() {
+export default async function IntegrationsSettingsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ calendar?: string }>;
+}) {
   const session = await auth();
-  if (!session?.organizationId) return null;
+  if (!session?.organizationId || !session.user?.id) return null;
 
+  const params = await searchParams;
   const statuses = await listOrgProviderKeyStatus(session.organizationId);
   const canEdit = session.role === "owner" || session.role === "admin";
+  const configured = googleCalendarConfigured();
+  const connection = await getGoogleCalendarConnection(session.user.id, session.organizationId);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -41,10 +57,21 @@ export default async function IntegrationsSettingsPage() {
       </div>
 
       <section className="stack-md">
+        <p className="section-label">Calendar</p>
+        <div className="grid-3">
+          <GoogleCalendarCard
+            configured={configured}
+            connected={Boolean(connection)}
+            accountEmail={connection?.accountEmail}
+            calendarQuery={params.calendar}
+          />
+        </div>
+      </section>
+
+      <section className="stack-md">
         <p className="section-label">Third-party integrations</p>
         <DemoNotice>
-          Connection states below are demo content — no OAuth apps are registered yet. GitHub lands first, then a
-          generic bring-your-own-credentials connector for the rest.
+          Connection states below are demo content — no OAuth apps are registered yet. GitHub lands next.
         </DemoNotice>
         <div className="grid-3">
           {integrationCatalog.map((i) => (

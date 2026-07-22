@@ -22,6 +22,9 @@ const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
 vi.mock("@/lib/db/queries", () => ({ getOrgProviderKey: (...args: [string, string]) => mockGetOrgProviderKey(...args) }));
+vi.mock("@/lib/db/custom-agents", () => ({
+  getOrgCustomAgent: vi.fn(async () => undefined)
+}));
 vi.mock("@/lib/db/workspace", () => ({
   createAgentRun: vi.fn(async () => ({
     id: "run-1",

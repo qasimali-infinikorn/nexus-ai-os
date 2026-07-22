@@ -16,7 +16,7 @@ export function CreateMeetingForm() {
         <h3 className="card-title" style={{ fontSize: "1rem" }}>
           Create meeting
         </h3>
-        <p className="card-sub">Manual entry until calendar OAuth is connected.</p>
+        <p className="card-sub">Manual entry — Google Calendar sync is available under Integrations.</p>
       </div>
 
       {state?.error ? (

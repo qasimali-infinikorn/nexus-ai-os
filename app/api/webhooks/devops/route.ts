@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
         body: `${data.version}${data.detail ? ` — ${data.detail}` : ""}`,
         href: "/devops",
         tone: "red",
-        badge: "deploy"
+        badge: "deploy",
+        prefsEvent: "builds"
       });
     }
     return NextResponse.json({ ok: true, id: row.id });

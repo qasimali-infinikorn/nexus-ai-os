@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { callLLM, AGENTS } from "@/lib/agents";
 import { auth } from "@/lib/auth";
 import { getOrgProviderKey } from "@/lib/db/queries";
+import { getOrgCustomAgent } from "@/lib/db/custom-agents";
 import { createAgentRun, createNotification, finishAgentRun } from "@/lib/db/workspace";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -70,11 +71,21 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (typeof agentType !== "string" || (agentType !== "coordinator" && !AGENTS[agentType])) {
+  if (typeof agentType !== "string") {
+    return NextResponse.json({ type: "error", message: "agentType is required." }, { status: 400 });
+  }
+
+  const organizationId = session.organizationId;
+  const customAgent =
+    agentType !== "coordinator" && !AGENTS[agentType]
+      ? await getOrgCustomAgent(organizationId, agentType)
+      : undefined;
+
+  if (agentType !== "coordinator" && !AGENTS[agentType] && !customAgent) {
     return NextResponse.json({ type: "error", message: `Unknown agent type: ${agentType}` }, { status: 400 });
   }
 
-  const activeKey = await getOrgProviderKey(session.organizationId, provider);
+  const activeKey = await getOrgProviderKey(organizationId, provider);
   if (!activeKey) {
     return NextResponse.json(
       {
@@ -85,7 +96,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const organizationId = session.organizationId;
   const userId = session.user.id;
   const run = await createAgentRun({
     organizationId,
@@ -145,21 +155,23 @@ export async function POST(req: NextRequest) {
 
       try {
         if (agentType !== "coordinator") {
-          const specialist = AGENTS[agentType];
-          if (!specialist) {
+          const specialist = AGENTS[agentType as string];
+          const systemPrompt = specialist?.systemPrompt ?? customAgent?.systemPrompt;
+          const name = specialist?.name ?? customAgent?.name ?? String(agentType);
+          if (!systemPrompt) {
             throw new Error(`Unknown agent type: ${agentType}`);
           }
 
-          send({ type: "status", message: `Executing ${specialist.name} Agent...` });
+          send({ type: "status", message: `Executing ${name} Agent...` });
 
           let fullPrompt = prompt as string;
           if (context) {
             fullPrompt = `CONTEXT/INPUT:\n${context}\n\nUSER PROMPT:\n${prompt}`;
           }
 
-          const result = await callLLM(provider, model, activeKey, specialist.systemPrompt, fullPrompt);
+          const result = await callLLM(provider, model, activeKey, systemPrompt, fullPrompt);
 
-          send({ type: "agent_result", agent: agentType, content: result });
+          send({ type: "agent_result", agent: agentType as string, content: result });
           send({ type: "final_result", content: result });
           await completeOk(result);
           controller.close();

@@ -69,18 +69,22 @@ progress of an agent run.
   model: string;                 // e.g. "gpt-4o", "claude-3-5-sonnet-20241022", "gemini-2.5-flash"
   prompt: string;
   agentType: "coordinator" | "eng_lead" | "architecture" | "proposal"
-           | "research" | "documentation" | "client_meeting" | "knowledge";
-  keys: { openai?: string; anthropic?: string; google?: string };
+           | "research" | "documentation" | "client_meeting" | "knowledge"
+           | string;             // also org custom keys like `custom_security_reviewer`
   context?: string;              // optional extra context (git diff, RAG snippets, etc.)
 }
 ```
 
-`keys[provider]` must be a non-empty string, `provider` must be one of the
+Provider API keys come from the org's encrypted BYOK store (Settings →
+Integrations), not from the request body. `provider` must be one of the
 three listed values, and `prompt`/`context`/`model` must stay within the
 length limits in `SECURITY.md` — any of these failing returns a plain JSON
 `400 { type: "error", message }` response *before* the stream opens (no
 partial stream is started). Only a failure inside the stream itself (LLM
 call errors, etc.) is reported as an `error` event on the stream.
+
+Unknown `agentType` values are rejected unless they match an
+`org_custom_agents.key` for the caller's organization.
 
 ### Response stream events
 
@@ -95,10 +99,10 @@ Each line is a JSON object with a `type`:
 
 ### Behavior by `agentType`
 
-- **`agentType !== "coordinator"`** (direct specialist mode): calls
-  `AGENTS[agentType]` once with `context` prepended to `prompt` if present,
-  then sends one `agent_result` and one `final_result` with the same
-  content.
+- **`agentType !== "coordinator"`** (direct specialist mode): resolves
+  `AGENTS[agentType]` or an org custom agent, calls once with `context`
+  prepended to `prompt` if present, then sends one `agent_result` and one
+  `final_result` with the same content.
 - **`agentType === "coordinator"`**: runs the 3-step CEO pipeline described
   in [`ARCHITECTURE.md`](./ARCHITECTURE.md) — classify → optionally run a
   specialist → synthesize. Only the synthesis step's output is sent as
@@ -188,3 +192,15 @@ available at the API level but not yet wired into a UI control.
 
 All actions and `GET` return `{ success: false, error: string }` with a
 `4xx`/`500` status on failure instead of throwing.
+
+## Google Calendar OAuth
+
+Per-user calendar connect (not Auth.js login). Requires session auth and
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/integrations/google-calendar/start` | Redirects to Google consent (signed `state`) |
+| `GET /api/integrations/google-calendar/callback` | Exchanges code, stores encrypted refresh token, syncs 14 days of events into `meetings` |
+
+Optional: `GOOGLE_CALENDAR_REDIRECT_URI` to override the callback URL.

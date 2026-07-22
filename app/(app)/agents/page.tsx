@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Play, Settings2, Bot } from "lucide-react";
+import { Play, Settings2, Bot, Trash2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getAgentRunStats, listAgentRuns } from "@/lib/db/workspace";
+import { listOrgCustomAgents } from "@/lib/db/custom-agents";
+import { deleteCustomAgentAction } from "@/lib/actions/custom-agents";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Card, CardHead, Pill } from "@/components/workspace/ui";
+import { NewCustomAgentForm } from "@/components/agents/new-custom-agent-form";
 import { agents } from "@/lib/workspace/content";
 import type { AgentRun } from "@/lib/db/schema";
 
@@ -50,9 +53,11 @@ export default async function AgentsPage() {
   const session = await auth();
   if (!session?.organizationId) redirect("/login");
 
-  const [stats, runs] = await Promise.all([
+  const canManage = session.role === "owner" || session.role === "admin";
+  const [stats, runs, customAgents] = await Promise.all([
     getAgentRunStats(session.organizationId),
-    listAgentRuns(session.organizationId, 20)
+    listAgentRuns(session.organizationId, 20),
+    listOrgCustomAgents(session.organizationId)
   ]);
 
   const succeeded = stats.byAgent.reduce((n, a) => n + a.count, 0);
@@ -63,12 +68,16 @@ export default async function AgentsPage() {
     if (!latestByType.has(run.agentType)) latestByType.set(run.agentType, run);
   }
 
+  const catalogCount = agents.length + customAgents.length;
+
   return (
     <>
       <PageHeader
         title="Agents"
-        description={`${agents.length} specialized agents · ${stats.last7d} runs this week · ${successRate} success rate`}
+        description={`${catalogCount} agents · ${stats.last7d} runs this week · ${successRate} success rate`}
       />
+
+      {canManage ? <NewCustomAgentForm /> : null}
 
       <div className="grid-3">
         {agents.map((a) => {
@@ -144,6 +153,72 @@ export default async function AgentsPage() {
                 <button type="button" className="icon-btn" aria-label={`Configure ${a.name}`} disabled>
                   <Settings2 size={16} aria-hidden />
                 </button>
+              </div>
+            </article>
+          );
+        })}
+
+        {customAgents.map((a) => {
+          const latest = latestByType.get(a.key);
+          const typeCount = stats.byAgent.find((b) => b.agentType === a.key)?.count ?? 0;
+          const cardStatus =
+            latest?.status === "running" ? "running" : latest ? "active" : "idle";
+          const runHref = `/ai-workspace?agent=${encodeURIComponent(a.key)}`;
+
+          return (
+            <article key={a.id} className="agent-card">
+              <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
+                <span className={`stat-icon ${a.accent}`} style={{ width: 38, height: 38 }}>
+                  <Bot size={18} aria-hidden />
+                </span>
+                <div className="stack" style={{ flex: 1 }}>
+                  <h3 className="card-title">{a.name}</h3>
+                  <span className="row" style={{ gap: 6, fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                    <span className={`status-dot ${cardStatus}`} aria-hidden />
+                    {STATUS_LABEL[cardStatus]}
+                    <span aria-hidden>·</span>
+                    <span>Custom</span>
+                    {typeCount > 0 ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span>{typeCount} succeeded</span>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              </div>
+
+              <p className="desc">{a.description}</p>
+
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <span className="tag">{a.key}</span>
+              </div>
+
+              <div className="row" style={{ gap: 8, fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                {latest ? (
+                  <>
+                    <span className="truncate">{runLabel(latest)}</span>
+                    <span aria-hidden>·</span>
+                    <span className="nowrap">{relativeTime(latest.createdAt)}</span>
+                  </>
+                ) : (
+                  <span>No runs yet</span>
+                )}
+              </div>
+
+              <div className="row" style={{ gap: 8, marginTop: "auto" }}>
+                <Link href={runHref} className="btn-primary" style={{ flex: 1 }}>
+                  <Play size={14} aria-hidden />
+                  <span>Run</span>
+                </Link>
+                {canManage ? (
+                  <form action={deleteCustomAgentAction}>
+                    <input type="hidden" name="id" value={a.id} />
+                    <button type="submit" className="icon-btn" aria-label={`Delete ${a.name}`}>
+                      <Trash2 size={16} aria-hidden />
+                    </button>
+                  </form>
+                ) : null}
               </div>
             </article>
           );

@@ -104,7 +104,9 @@ existing encrypted keys unreadable (org admins would need to re-enter them).
 
 See [`AUTH.md`](./AUTH.md)'s "Known gaps" for the auth-specific items (no
 org switcher, no invite emails, no password reset, no login-attempt rate
-limiting). Calendar OAuth for Meetings is deferred (manual create works).
+limiting). Google Calendar OAuth for Meetings is live (per-user connections;
+Microsoft still deferred). Email/Slack notification delivery is still open —
+prefs gate in-app fan-out only.
 
 Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 (limits + proxy public routes + webhook secret handling).
@@ -131,6 +133,7 @@ Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 | Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user |
 | Rate limit | `POST /api/webhooks/devops` | 60 req/min per client IP |
 | Webhook auth | `POST /api/webhooks/devops` | `WEBHOOK_SECRET` via Bearer or `x-nexus-webhook-secret` (timing-safe) |
+| Calendar OAuth | Google Calendar connect | Separate from Auth.js; HMAC state (`AUTH_SECRET`); encrypted refresh tokens |
 | `provider` allowlist | `/api/orchestrate` | `openai` \| `anthropic` \| `google` |
 | `prompt` length | `/api/orchestrate` | 20,000 chars |
 | `context` length | `/api/orchestrate` | 100,000 chars |

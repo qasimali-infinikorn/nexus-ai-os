@@ -4,8 +4,13 @@ import { Users, MapPin, Check, Sparkles } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { listMeetings, listMeetingActionItems } from "@/lib/db/workspace";
 import { toggleMeetingActionItemAction } from "@/lib/actions/workspace";
+import {
+  getGoogleCalendarConnection,
+  googleCalendarConfigured
+} from "@/lib/integrations/google-calendar";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Card, CardHead, Pill } from "@/components/workspace/ui";
+import { CalendarSyncBar } from "@/components/meetings/calendar-sync-bar";
 import { CreateMeetingForm } from "./create-meeting-form";
 
 function formatTime(date: Date): string {
@@ -19,27 +24,40 @@ function kindTone(kind: string): "blue" | "violet" | "green" | "slate" {
   return "slate";
 }
 
-export default async function MeetingsPage() {
+export default async function MeetingsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ calendar?: string }>;
+}) {
   const session = await auth();
-  if (!session?.organizationId) redirect("/login");
+  if (!session?.organizationId || !session.user?.id) redirect("/login");
 
-  const [meetings, actionItems] = await Promise.all([
+  const params = await searchParams;
+  const [meetings, actionItems, connection] = await Promise.all([
     listMeetings(session.organizationId),
-    listMeetingActionItems(session.organizationId)
+    listMeetingActionItems(session.organizationId),
+    getGoogleCalendarConnection(session.user.id, session.organizationId)
   ]);
 
   const needPrep = meetings.filter((m) => m.needsPrep).length;
+  const configured = googleCalendarConfigured();
+  const googleCount = meetings.filter((m) => m.source === "google").length;
 
   return (
     <>
       <PageHeader
         title="Meeting Assistant"
-        description={`${meetings.length} meetings · ${needPrep} need preparation · calendar sync pending`}
+        description={`${meetings.length} meetings · ${needPrep} need preparation${
+          connection ? ` · ${googleCount} from Google` : ""
+        }`}
       />
 
-      <p className="muted" style={{ fontSize: "0.85rem", marginTop: -8 }}>
-        Calendar OAuth is still pending — create meetings manually for now. Agenda prep runs through AI Workspace.
-      </p>
+      <CalendarSyncBar
+        configured={configured}
+        connected={Boolean(connection)}
+        accountEmail={connection?.accountEmail}
+        justSynced={params.calendar === "synced"}
+      />
 
       <CreateMeetingForm />
 
@@ -82,6 +100,7 @@ export default async function MeetingsPage() {
                       <span className="row" style={{ gap: 10, flexWrap: "wrap" }}>
                         <span className="title">{m.title}</span>
                         <Pill tone={kindTone(m.kind)}>{m.kind}</Pill>
+                        {m.source === "google" ? <Pill tone="green">Google</Pill> : null}
                         {m.needsPrep ? <Pill tone="amber">Needs prep</Pill> : null}
                       </span>
                       <span className="meta row" style={{ gap: 12, flexWrap: "wrap" }}>
