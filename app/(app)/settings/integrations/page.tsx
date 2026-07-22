@@ -5,7 +5,12 @@ import {
   getGoogleCalendarConnection,
   googleCalendarConfigured
 } from "@/lib/integrations/google-calendar";
+import {
+  getMicrosoftCalendarConnection,
+  microsoftCalendarConfigured
+} from "@/lib/integrations/microsoft-calendar";
 import { GoogleCalendarCard } from "@/components/integrations/google-calendar-card";
+import { MicrosoftCalendarCard } from "@/components/integrations/microsoft-calendar-card";
 import { OrgKeyRow } from "./org-key-row";
 import { integrationCatalog } from "@/lib/workspace/settings-content";
 
@@ -18,7 +23,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 export default async function IntegrationsSettingsPage({
   searchParams
 }: {
-  searchParams: Promise<{ calendar?: string }>;
+  searchParams: Promise<{ calendar?: string; mscalendar?: string }>;
 }) {
   const session = await auth();
   if (!session?.organizationId || !session.user?.id) return null;
@@ -26,8 +31,10 @@ export default async function IntegrationsSettingsPage({
   const params = await searchParams;
   const statuses = await listOrgProviderKeyStatus(session.organizationId);
   const canEdit = session.role === "owner" || session.role === "admin";
-  const configured = googleCalendarConfigured();
-  const connection = await getGoogleCalendarConnection(session.user.id, session.organizationId);
+  const [googleConn, msConn] = await Promise.all([
+    getGoogleCalendarConnection(session.user.id, session.organizationId),
+    getMicrosoftCalendarConnection(session.user.id, session.organizationId)
+  ]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -60,10 +67,16 @@ export default async function IntegrationsSettingsPage({
         <p className="section-label">Calendar</p>
         <div className="grid-3">
           <GoogleCalendarCard
-            configured={configured}
-            connected={Boolean(connection)}
-            accountEmail={connection?.accountEmail}
+            configured={googleCalendarConfigured()}
+            connected={Boolean(googleConn)}
+            accountEmail={googleConn?.accountEmail}
             calendarQuery={params.calendar}
+          />
+          <MicrosoftCalendarCard
+            configured={microsoftCalendarConfigured()}
+            connected={Boolean(msConn)}
+            accountEmail={msConn?.accountEmail}
+            calendarQuery={params.mscalendar}
           />
         </div>
       </section>

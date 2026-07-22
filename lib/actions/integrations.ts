@@ -6,6 +6,10 @@ import {
   deleteGoogleCalendarConnection,
   syncGoogleCalendarMeetings
 } from "@/lib/integrations/google-calendar";
+import {
+  deleteMicrosoftCalendarConnection,
+  syncMicrosoftCalendarMeetings
+} from "@/lib/integrations/microsoft-calendar";
 import { writeAuditLog } from "@/lib/db/queries";
 
 export async function disconnectGoogleCalendarAction(): Promise<void> {
@@ -33,7 +37,38 @@ export async function syncGoogleCalendarAction(): Promise<{ error?: string; succ
     });
     revalidatePath("/meetings");
     revalidatePath("/dashboard");
-    return { success: `Synced ${upserted} event${upserted === 1 ? "" : "s"}.` };
+    return { success: `Synced ${upserted} Google event${upserted === 1 ? "" : "s"}.` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sync failed." };
+  }
+}
+
+export async function disconnectMicrosoftCalendarAction(): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id || !session.organizationId) throw new Error("Authentication required.");
+  await deleteMicrosoftCalendarConnection(session.user.id, session.organizationId);
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "integration.microsoft_calendar.disconnect",
+    targetType: "oauth_connection",
+    targetId: "microsoft_calendar"
+  });
+  revalidatePath("/settings/integrations");
+  revalidatePath("/meetings");
+}
+
+export async function syncMicrosoftCalendarAction(): Promise<{ error?: string; success?: string }> {
+  const session = await auth();
+  if (!session?.user?.id || !session.organizationId) return { error: "Authentication required." };
+  try {
+    const { upserted } = await syncMicrosoftCalendarMeetings({
+      userId: session.user.id,
+      organizationId: session.organizationId
+    });
+    revalidatePath("/meetings");
+    revalidatePath("/dashboard");
+    return { success: `Synced ${upserted} Microsoft event${upserted === 1 ? "" : "s"}.` };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sync failed." };
   }

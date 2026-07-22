@@ -8,6 +8,10 @@ import {
   getGoogleCalendarConnection,
   googleCalendarConfigured
 } from "@/lib/integrations/google-calendar";
+import {
+  getMicrosoftCalendarConnection,
+  microsoftCalendarConfigured
+} from "@/lib/integrations/microsoft-calendar";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Card, CardHead, Pill } from "@/components/workspace/ui";
 import { CalendarSyncBar } from "@/components/meetings/calendar-sync-bar";
@@ -33,29 +37,43 @@ export default async function MeetingsPage({
   if (!session?.organizationId || !session.user?.id) redirect("/login");
 
   const params = await searchParams;
-  const [meetings, actionItems, connection] = await Promise.all([
+  const [meetings, actionItems, googleConn, msConn] = await Promise.all([
     listMeetings(session.organizationId),
     listMeetingActionItems(session.organizationId),
-    getGoogleCalendarConnection(session.user.id, session.organizationId)
+    getGoogleCalendarConnection(session.user.id, session.organizationId),
+    getMicrosoftCalendarConnection(session.user.id, session.organizationId)
   ]);
 
   const needPrep = meetings.filter((m) => m.needsPrep).length;
-  const configured = googleCalendarConfigured();
   const googleCount = meetings.filter((m) => m.source === "google").length;
+  const msCount = meetings.filter((m) => m.source === "microsoft").length;
+  const syncBits = [
+    googleConn ? `${googleCount} from Google` : null,
+    msConn ? `${msCount} from Microsoft` : null
+  ].filter(Boolean);
 
   return (
     <>
       <PageHeader
         title="Meeting Assistant"
         description={`${meetings.length} meetings · ${needPrep} need preparation${
-          connection ? ` · ${googleCount} from Google` : ""
+          syncBits.length ? ` · ${syncBits.join(" · ")}` : ""
         }`}
       />
 
       <CalendarSyncBar
-        configured={configured}
-        connected={Boolean(connection)}
-        accountEmail={connection?.accountEmail}
+        google={{
+          provider: "google",
+          configured: googleCalendarConfigured(),
+          connected: Boolean(googleConn),
+          accountEmail: googleConn?.accountEmail
+        }}
+        microsoft={{
+          provider: "microsoft",
+          configured: microsoftCalendarConfigured(),
+          connected: Boolean(msConn),
+          accountEmail: msConn?.accountEmail
+        }}
         justSynced={params.calendar === "synced"}
       />
 
@@ -101,6 +119,7 @@ export default async function MeetingsPage({
                         <span className="title">{m.title}</span>
                         <Pill tone={kindTone(m.kind)}>{m.kind}</Pill>
                         {m.source === "google" ? <Pill tone="green">Google</Pill> : null}
+                        {m.source === "microsoft" ? <Pill tone="blue">Microsoft</Pill> : null}
                         {m.needsPrep ? <Pill tone="amber">Needs prep</Pill> : null}
                       </span>
                       <span className="meta row" style={{ gap: 12, flexWrap: "wrap" }}>

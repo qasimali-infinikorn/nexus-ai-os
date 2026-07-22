@@ -529,7 +529,7 @@ export const incidents = pgTable(
 export type Incident = typeof incidents.$inferSelect;
 
 // User-linked OAuth connections (calendar, etc.) — separate from Auth.js login.
-export const OAUTH_CONNECTION_PROVIDERS = ["google_calendar"] as const;
+export const OAUTH_CONNECTION_PROVIDERS = ["google_calendar", "microsoft_calendar"] as const;
 export type OAuthConnectionProvider = (typeof OAUTH_CONNECTION_PROVIDERS)[number];
 
 export const userOauthConnections = pgTable(

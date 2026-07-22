@@ -193,14 +193,16 @@ available at the API level but not yet wired into a UI control.
 All actions and `GET` return `{ success: false, error: string }` with a
 `4xx`/`500` status on failure instead of throwing.
 
-## Google Calendar OAuth
+## Google / Microsoft Calendar OAuth
 
-Per-user calendar connect (not Auth.js login). Requires session auth and
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+Per-user calendar connect (not Auth.js login). Requires session auth.
 
 | Route | Purpose |
 |-------|---------|
 | `GET /api/integrations/google-calendar/start` | Redirects to Google consent (signed `state`) |
 | `GET /api/integrations/google-calendar/callback` | Exchanges code, stores encrypted refresh token, syncs 14 days of events into `meetings` |
+| `GET /api/integrations/microsoft-calendar/start` | Redirects to Microsoft consent |
+| `GET /api/integrations/microsoft-calendar/callback` | Same flow via Microsoft Graph `calendarView` |
 
-Optional: `GOOGLE_CALENDAR_REDIRECT_URI` to override the callback URL.
+Env: `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (optional `GOOGLE_CALENDAR_REDIRECT_URI`);
+`MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` (optional `MICROSOFT_CALENDAR_REDIRECT_URI`).
