@@ -2,29 +2,24 @@ import Link from "next/link";
 import { Building2, AlertTriangle, Bot, DollarSign } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth/require-platform-admin";
 import { getPlatformOverviewStats } from "@/lib/db/queries";
+import { runPlatformHealthChecks } from "@/lib/platform/health";
 import { Card, CardHead, DemoNotice, Pill } from "@/components/workspace/ui";
-
-const PLAN_LABELS: Record<string, string> = {
-  trial: "Trial",
-  team: "Team",
-  business: "Business",
-  enterprise: "Enterprise"
-};
+import { PLAN_LABELS } from "@/lib/workspace/admin-ui";
 
 export default async function AdminOverviewPage() {
   await requirePlatformAdmin();
-  const stats = await getPlatformOverviewStats();
+  const [stats, health] = await Promise.all([getPlatformOverviewStats(), runPlatformHealthChecks()]);
   const planTotal = stats.planMix.reduce((sum, row) => sum + row.count, 0) || 1;
 
   return (
     <div className="stack-lg">
       <DemoNotice>
-        Live tenant counts come from the database. Platform MRR, agent runs, and open incidents
-        stay empty until billing and observability land in Phase 3.3 — they are not invented here.
+        Tenant counts and system health are live. Platform MRR and agent runs stay empty until billing
+        sync and a run ledger exist — they are not invented here.
       </DemoNotice>
 
       <div className="grid-4">
-        <div className="stat-card">
+        <Link href="/admin/billing" className="stat-card" style={{ textDecoration: "none", color: "inherit" }}>
           <div className="stat-top">
             <span className="dim" style={{ fontSize: "0.8rem" }}>
               Platform MRR
@@ -33,9 +28,9 @@ export default async function AdminOverviewPage() {
           </div>
           <p className="stat-value">—</p>
           <p className="dim" style={{ fontSize: "0.8rem" }}>
-            Not connected
+            Billing not connected
           </p>
-        </div>
+        </Link>
 
         <Link href="/admin/tenants" className="stat-card" style={{ textDecoration: "none", color: "inherit" }}>
           <div className="stat-top">
@@ -70,9 +65,9 @@ export default async function AdminOverviewPage() {
             </span>
             <AlertTriangle size={16} className="dim" aria-hidden />
           </div>
-          <p className="stat-value">—</p>
+          <p className="stat-value">{health.incidentCount}</p>
           <p className="dim" style={{ fontSize: "0.8rem" }}>
-            Status page pending
+            {health.ok ? "All probes healthy" : "See System Status"}
           </p>
         </Link>
       </div>
@@ -98,7 +93,7 @@ export default async function AdminOverviewPage() {
                 return (
                   <li key={row.plan}>
                     <div className="row-between" style={{ marginBottom: 6 }}>
-                      <span>{PLAN_LABELS[row.plan] ?? row.plan}</span>
+                      <span>{PLAN_LABELS[row.plan as keyof typeof PLAN_LABELS] ?? row.plan}</span>
                       <span className="dim">
                         {row.count} · {pct}%
                       </span>

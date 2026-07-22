@@ -184,9 +184,13 @@ Seeded keys: `ai-workspace`, `live-meetings`, `proposal-studio`, `byo-model`, `s
 
 ### Phase 3.3 — Billing & Status (3–5 days)
 
-- [ ] Billing KPIs from Stripe **or** explicit “not connected” empty state
-- [ ] System status page (health checks against `/api` + DB ping)
-- [ ] Nav badges for incidents / tenant count
+- [x] Billing KPIs from Stripe **or** explicit “not connected” empty state
+- [x] System status page (health checks against `/api` + DB ping)
+- [x] Nav badges for incidents / tenant count
+
+Billing shows live plan mix + trial counts but never invents MRR. Status runs
+`runPlatformHealthChecks()` (also exposed at public `GET /api/health`). Nav
+badges: tenant count on Tenants; incident count on System Status when > 0.
 
 ### Phase 3.4 — Polish
 
@@ -218,6 +222,7 @@ Seeded keys: `ai-workspace`, `live-meetings`, `proposal-studio`, `byo-model`, `s
 ## 10. Open decisions
 
 1. **Billing source**: Stripe from day one vs. manual plan fields until revenue is real?
+   → **Decided for 3.3a**: honest empty $ KPIs; live plan_tier mix only. Stripe sync later.
 2. **Impersonation**: ship in 3.1 or permanently defer?
 3. **Admin theme**: force dark, or respect user theme toggle?
 

@@ -18,17 +18,25 @@ function initials(name: string): string {
 export function AdminShell({
   userName,
   tenantCount,
+  incidentCount,
   children
 }: {
   userName: string;
   tenantCount?: number;
+  incidentCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const nav = ADMIN_NAV.map((item) =>
-    item.href === "/admin/tenants" && tenantCount != null ? { ...item, badge: tenantCount } : item
-  );
+  const nav = ADMIN_NAV.map((item) => {
+    if (item.href === "/admin/tenants" && tenantCount != null) {
+      return { ...item, badge: tenantCount };
+    }
+    if (item.href === "/admin/status" && incidentCount != null && incidentCount > 0) {
+      return { ...item, badge: incidentCount };
+    }
+    return item;
+  });
 
   return (
     <div className="admin-root" data-theme="dark">

@@ -1,13 +1,39 @@
 # API Reference
 
-Both routes live under `app/api/` and run on the Node.js runtime. Neither
-route requires authentication (see [`SECURITY.md`](./SECURITY.md)), but both
-are rate-limited and validate their inputs — see the guardrail reference
-table in `SECURITY.md` for exact limits, and `lib/rate-limit.ts` /
+Routes live under `app/api/` and run on the Node.js runtime. Orchestrate and
+knowledge require an authenticated org session in the app; `/api/health` is
+public for uptime probes. Orchestrate/knowledge are rate-limited and validate
+inputs — see the guardrail table in `SECURITY.md`, and `lib/rate-limit.ts` /
 `lib/validation.ts` for the implementation.
 
-A rate-limited request on either route returns `429` with a `Retry-After`
-header (seconds) before any other processing happens.
+A rate-limited request returns `429` with a `Retry-After` header (seconds)
+before any other processing happens.
+
+## `GET /api/health`
+
+Public liveness/readiness probe. Returns platform check results without
+exposing secrets.
+
+- **200** — every check is `healthy`
+- **503** — one or more checks are `degraded` or `down`
+
+```ts
+{
+  ok: boolean;
+  checkedAt: string; // ISO
+  incidentCount: number;
+  checks: {
+    id: string;
+    name: string;
+    status: "healthy" | "degraded" | "down";
+    detail: string;
+    latencyMs: number | null;
+  }[];
+}
+```
+
+Probes today: Postgres, Auth.js (`AUTH_SECRET`), encryption (`ENCRYPTION_KEY`),
+Orchestrate API surface, Knowledge/embeddings readiness.
 
 ## `POST /api/orchestrate`
 

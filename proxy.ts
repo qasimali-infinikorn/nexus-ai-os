@@ -21,8 +21,10 @@ export default auth((req) => {
   const isInviteRoute = pathname.startsWith("/invite/");
   // Marketing home is public; signed-in users are redirected by the page.
   const isPublicMarketingRoute = pathname === "/";
+  // Uptime / load-balancer probes — no session required.
+  const isPublicHealthRoute = pathname === "/api/health";
 
-  if (isPublicApiAuthRoute || isInviteRoute || isPublicMarketingRoute) {
+  if (isPublicApiAuthRoute || isInviteRoute || isPublicMarketingRoute || isPublicHealthRoute) {
     return NextResponse.next();
   }
 
