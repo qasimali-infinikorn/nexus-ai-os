@@ -14,7 +14,9 @@ import {
   getInvitationByToken,
   acceptInvitation,
   writeAuditLog,
-  slugify
+  slugify,
+  getPlatformOverviewStats,
+  setUserPlatformAdmin
 } from "@/lib/db/queries";
 import { organizations, users, memberships, invitations, auditLog } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/testDb";
@@ -228,5 +230,43 @@ describe("writeAuditLog", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("org_provider_key.set");
     expect(rows[0].metadata).toEqual({ note: "test" });
+  });
+});
+
+describe("platform admin helpers", () => {
+  it("aggregates org counts for the Superadmin overview", async () => {
+    await createUserAndOrg({
+      email: "a@example.com",
+      name: "A",
+      passwordHash: "h",
+      organizationName: "Org A"
+    });
+    await createUserAndOrg({
+      email: "b@example.com",
+      name: "B",
+      passwordHash: "h",
+      organizationName: "Org B"
+    });
+
+    const stats = await getPlatformOverviewStats();
+    expect(stats.tenantCount).toBe(2);
+    expect(stats.trialCount).toBe(2);
+    expect(stats.activeCount).toBe(0);
+    expect(stats.planMix.some((p) => p.plan === "trial" && p.count === 2)).toBe(true);
+  });
+
+  it("grants and revokes is_platform_admin by email", async () => {
+    await createUserAndOrg({
+      email: "admin@example.com",
+      name: "Admin",
+      passwordHash: "h",
+      organizationName: "Admin Org"
+    });
+
+    const granted = await setUserPlatformAdmin("admin@example.com", true);
+    expect(granted?.isPlatformAdmin).toBe(true);
+
+    const revoked = await setUserPlatformAdmin("Admin@example.com", false);
+    expect(revoked?.isPlatformAdmin).toBe(false);
   });
 });

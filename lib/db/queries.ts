@@ -156,6 +156,56 @@ export async function getOrganizationById(id: string): Promise<Organization | un
   return organization;
 }
 
+/** Platform-admin Overview: live org counts + plan mix. Revenue KPIs stay unset until billing lands. */
+export async function getPlatformOverviewStats(): Promise<{
+  tenantCount: number;
+  activeCount: number;
+  trialCount: number;
+  pastDueCount: number;
+  suspendedCount: number;
+  planMix: { plan: string; count: number }[];
+}> {
+  const db = getDb();
+
+  const [totals] = await db
+    .select({
+      tenantCount: sql<number>`count(*)::int`,
+      activeCount: sql<number>`count(*) filter (where ${organizations.status} = 'active')::int`,
+      trialCount: sql<number>`count(*) filter (where ${organizations.status} = 'trial')::int`,
+      pastDueCount: sql<number>`count(*) filter (where ${organizations.status} = 'past_due')::int`,
+      suspendedCount: sql<number>`count(*) filter (where ${organizations.status} = 'suspended')::int`
+    })
+    .from(organizations);
+
+  const planRows = await db
+    .select({
+      plan: organizations.planTier,
+      count: sql<number>`count(*)::int`
+    })
+    .from(organizations)
+    .groupBy(organizations.planTier)
+    .orderBy(asc(organizations.planTier));
+
+  return {
+    tenantCount: totals?.tenantCount ?? 0,
+    activeCount: totals?.activeCount ?? 0,
+    trialCount: totals?.trialCount ?? 0,
+    pastDueCount: totals?.pastDueCount ?? 0,
+    suspendedCount: totals?.suspendedCount ?? 0,
+    planMix: planRows.map((r) => ({ plan: r.plan, count: r.count }))
+  };
+}
+
+export async function setUserPlatformAdmin(email: string, enabled: boolean): Promise<User | undefined> {
+  const db = getDb();
+  const [user] = await db
+    .update(users)
+    .set({ isPlatformAdmin: enabled })
+    .where(eq(users.email, email.toLowerCase()))
+    .returning();
+  return user;
+}
+
 // Returns the decrypted plaintext key, or undefined if the org hasn't
 // configured that provider. Callers must never log/return this value to
 // the client verbatim.

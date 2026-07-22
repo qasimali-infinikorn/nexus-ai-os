@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LogOut, Menu, Sparkles } from "lucide-react";
+import { LogOut, Menu, Shield, Sparkles } from "lucide-react";
 import { NAV_GROUPS } from "./nav-config";
 import { logoutAction } from "@/lib/actions/auth";
 import { ThemeToggle } from "./theme-toggle";
@@ -33,11 +33,13 @@ export function AppShell({
   userName,
   roleLabel,
   orgName,
+  isPlatformAdmin = false,
   children
 }: {
   userName: string;
   roleLabel: string;
   orgName: string;
+  isPlatformAdmin?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -111,6 +113,12 @@ export function AppShell({
           </div>
 
           <div className="sidebar-footer">
+            {isPlatformAdmin ? (
+              <Link href="/admin" className="nav-link" onClick={() => setOpen(false)}>
+                <Shield size={17} aria-hidden />
+                <span>Platform admin</span>
+              </Link>
+            ) : null}
             <div className="user-chip">
               <span className="user-avatar" aria-hidden>
                 {initials(userName)}

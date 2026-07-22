@@ -36,6 +36,8 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
   }
 
+  // Optimistic JWT gate only — layout + requirePlatformAdmin() re-check
+  // users.is_platform_admin in the database before rendering or mutating.
   if (pathname.startsWith("/admin") && !session?.user.isPlatformAdmin) {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
   }

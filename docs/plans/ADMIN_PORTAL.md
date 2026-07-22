@@ -3,7 +3,10 @@
 Reference mockup: [`DESING/Nexus Superadmin.html`](../DESING/Nexus%20Superadmin.html)  
 Auth gate: `users.is_platform_admin` → JWT `session.user.isPlatformAdmin` (already checked in `proxy.ts` for `/admin/*`).
 
-This plan turns the Superadmin mockup into a real `/admin` console. It does **not** implement the portal yet — it sequences the work so Phase 3 can ship behind the existing platform-admin flag without blocking the tenant app.
+This plan turns the Superadmin mockup into a real `/admin` console. **Phase 3.0
+(shell + gate + Overview) is implemented**; later sections sequence Tenants,
+flags, billing, and status so they can ship behind the existing platform-admin
+flag without blocking the tenant app.
 
 ---
 
@@ -152,10 +155,12 @@ Mockup seed flags (parity with design):
 
 ### Phase 3.0 — Shell & gate (1–2 days)
 
-- [ ] `app/(admin)/layout.tsx` + nav config mirroring mockup
-- [ ] Overview page with placeholder KPIs (empty/demo clearly labeled)
-- [ ] Harden `proxy.ts` + layout `requirePlatformAdmin`
-- [ ] Seed script: set `is_platform_admin` for a known user
+- [x] `app/(admin)/layout.tsx` + nav config mirroring mockup
+- [x] Overview page with placeholder KPIs (empty/demo clearly labeled)
+- [x] Harden `proxy.ts` + layout `requirePlatformAdmin`
+- [x] Seed script: set `is_platform_admin` for a known user (`npm run admin:grant`)
+
+Stub routes also exist for Tenants / Flags / Billing / Status / Audit (honest empty states).
 
 ### Phase 3.1 — Tenants + Audit (3–5 days)
 

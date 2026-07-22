@@ -77,8 +77,18 @@ npm run dev
 ```
 
 Visit `/signup` to create the first account/organization. To grant platform
-admin (Superadmin console) access, set `is_platform_admin = true` on that
-user's row directly in Postgres — there's no UI for this in Phase 1.
+admin (Superadmin console) access:
+
+```bash
+npm run admin:grant -- you@example.com
+# revoke: npm run admin:grant -- you@example.com --revoke
+```
+
+Or set `is_platform_admin = true` on that user's row directly in Postgres.
+There's no self-serve UI for this. After granting, **sign out and back in**
+so the JWT picks up `isPlatformAdmin`, then open `/admin`.
+
+See `docs/plans/ADMIN_PORTAL.md` for the Phase 3 console plan.
 
 ## Known gaps (Phase 1)
 

@@ -42,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         userName={session.user.name}
         roleLabel={`${roleLabel} · ${session.organizationName ?? "Workspace"}`}
         orgName={session.organizationName ?? "Workspace"}
+        isPlatformAdmin={Boolean(session.user.isPlatformAdmin)}
       >
         <Topbar />
         <main id="main" className="main-content" tabIndex={-1}>
