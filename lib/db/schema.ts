@@ -358,6 +358,8 @@ export const userSettings = pgTable(
     notificationPrefs: jsonb("notification_prefs"),
     /** { reduceMotion: bool, comfortableDensity: bool, ... } */
     appearance: jsonb("appearance"),
+    /** { slackWebhookUrl?: string } — incoming webhook for Slack channel delivery */
+    delivery: jsonb("delivery").$type<{ slackWebhookUrl?: string }>(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [uniqueIndex("user_settings_user_org_unique_idx").on(table.userId, table.organizationId)]

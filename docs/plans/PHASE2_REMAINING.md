@@ -11,31 +11,32 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 | **Agents** | Done | `agent_runs` + built-ins; **custom org agents** (`org_custom_agents`) run via orchestrate / AI Workspace. |
 | **DevOps** | Done | `deployments` / `incidents` + `POST /api/webhooks/devops` (`WEBHOOK_SECRET`). |
 | **Meetings** | Done | Manual CRUD + **Google** and **Microsoft** Calendar OAuth sync (14 days). |
-| **Notifications** | Done | Inbox + mark-read; fan-out honors **in-app prefs** (email/Slack delivery still TBD). |
+| **Notifications** | Done | Inbox + mark-read; in-app prefs; **email (Resend)** + **Slack webhook** delivery. |
 | **Dashboard** | Done | Live KPIs from meetings, tasks, incidents, agent runs. |
 
 ## Remaining (optional / later)
 
-- Email / Slack delivery for notification prefs (prefs matrix already stores channels)
 - Jira / GitHub PR sync for Reviews notifications
 
 ## Migration
 
 ```bash
-npm run db:migrate   # loads .env.local; applies through 0007_calendar_agents_oauth
+npm run db:migrate   # through 0008_notification_delivery
 ```
 
-### Env (calendars)
+### Env
 
 ```bash
+# Calendars (optional)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-GOOGLE_CALENDAR_REDIRECT_URI=   # optional
-
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
-MICROSOFT_CALENDAR_REDIRECT_URI=   # optional; default {origin}/api/integrations/microsoft-calendar/callback
-```
 
-OAuth is **per-user + org**, separate from Auth.js login. Refresh tokens are
-encrypted with `ENCRYPTION_KEY`.
+# Email notifications (Resend)
+RESEND_API_KEY=
+EMAIL_FROM="Nexus <notify@yourdomain.com>"
+APP_URL=https://your-app.example   # links in email/Slack
+
+# Slack: per-user incoming webhook under Settings → Notifications
+```

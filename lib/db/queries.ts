@@ -828,11 +828,12 @@ export async function createProject(params: {
 
 export type NotificationPrefs = Record<string, { inApp: boolean; email: boolean; slack: boolean }>;
 export type AppearancePrefs = Record<string, boolean>;
+export type DeliveryPrefs = { slackWebhookUrl?: string };
 
 export async function getUserSettings(
   userId: string,
   organizationId: string
-): Promise<{ notificationPrefs: NotificationPrefs; appearance: AppearancePrefs }> {
+): Promise<{ notificationPrefs: NotificationPrefs; appearance: AppearancePrefs; delivery: DeliveryPrefs }> {
   const db = getDb();
   const [row] = await db
     .select()
@@ -841,7 +842,8 @@ export async function getUserSettings(
     .limit(1);
   return {
     notificationPrefs: (row?.notificationPrefs as NotificationPrefs) ?? {},
-    appearance: (row?.appearance as AppearancePrefs) ?? {}
+    appearance: (row?.appearance as AppearancePrefs) ?? {},
+    delivery: (row?.delivery as DeliveryPrefs) ?? {}
   };
 }
 
@@ -850,11 +852,13 @@ export async function saveUserSettings(params: {
   organizationId: string;
   notificationPrefs?: NotificationPrefs;
   appearance?: AppearancePrefs;
+  delivery?: DeliveryPrefs;
 }): Promise<void> {
   const db = getDb();
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (params.notificationPrefs) patch.notificationPrefs = params.notificationPrefs;
   if (params.appearance) patch.appearance = params.appearance;
+  if (params.delivery) patch.delivery = params.delivery;
 
   await db
     .insert(userSettings)
@@ -862,7 +866,8 @@ export async function saveUserSettings(params: {
       userId: params.userId,
       organizationId: params.organizationId,
       notificationPrefs: params.notificationPrefs ?? {},
-      appearance: params.appearance ?? {}
+      appearance: params.appearance ?? {},
+      delivery: params.delivery ?? {}
     })
     .onConflictDoUpdate({ target: [userSettings.userId, userSettings.organizationId], set: patch });
 }

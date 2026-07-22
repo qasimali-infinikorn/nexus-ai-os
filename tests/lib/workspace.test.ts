@@ -214,6 +214,32 @@ describe("Phase 2 workspace data", () => {
     expect(kept).not.toBeNull();
   });
 
+  it("still skips the inbox row when only email is enabled for the event", async () => {
+    const { organization, user } = await createUserAndOrg({
+      email: "email-only@example.com",
+      name: "E",
+      passwordHash: "h",
+      organizationName: "Email Co"
+    });
+
+    await saveUserSettings({
+      userId: user.id,
+      organizationId: organization.id,
+      notificationPrefs: {
+        agent_runs: { inApp: false, email: true, slack: false }
+      }
+    });
+
+    const row = await createNotification({
+      organizationId: organization.id,
+      userId: user.id,
+      kind: "Agents",
+      title: "Agent done",
+      body: "ok"
+    });
+    expect(row).toBeNull();
+  });
+
   it("creates org custom agents with unique keys", async () => {
     const { organization, user } = await createUserAndOrg({
       email: "ca@example.com",

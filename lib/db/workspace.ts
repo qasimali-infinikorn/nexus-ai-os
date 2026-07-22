@@ -95,32 +95,92 @@ export async function createNotification(params: {
       Agents: "agent_runs"
     }[params.kind] as string);
 
-  // Targeted notifications honor the recipient's in-app preference.
+  const href = params.href ?? "/notifications";
+  const payload = {
+    title: params.title,
+    body: params.body,
+    href,
+    kind: params.kind
+  };
+
+  const { getUserSettings, getUserById, listOrgMembers } = await import("./queries");
+  const { DEFAULT_NOTIFICATION_PREFS } = await import("../workspace/settings-content");
+  const { deliverExternalChannels } = await import("../notifications/deliver");
+
+  const resolveChannels = (prefs: Record<string, { inApp: boolean; email: boolean; slack: boolean }>) => {
+    const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...prefs };
+    return merged[eventId] ?? DEFAULT_NOTIFICATION_PREFS[eventId] ?? { inApp: true, email: false, slack: false };
+  };
+
   if (params.userId) {
-    const { getUserSettings } = await import("./queries");
-    const { DEFAULT_NOTIFICATION_PREFS } = await import("../workspace/settings-content");
-    const { notificationPrefs } = await getUserSettings(params.userId, params.organizationId);
-    const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...notificationPrefs };
-    const channel = merged[eventId] ?? DEFAULT_NOTIFICATION_PREFS[eventId];
-    if (channel && channel.inApp === false) {
-      return null;
+    const { notificationPrefs, delivery } = await getUserSettings(params.userId, params.organizationId);
+    const channels = resolveChannels(notificationPrefs);
+
+    let row: Notification | null = null;
+    if (channels.inApp !== false) {
+      const db = getDb();
+      const [inserted] = await db
+        .insert(notifications)
+        .values({
+          organizationId: params.organizationId,
+          userId: params.userId,
+          kind: params.kind,
+          title: params.title,
+          body: params.body,
+          href,
+          tone: params.tone ?? "slate",
+          badge: params.badge
+        })
+        .returning();
+      row = inserted;
     }
+
+    if (channels.email || channels.slack) {
+      const user = await getUserById(params.userId);
+      void deliverExternalChannels({
+        channels,
+        email: user?.email,
+        slackWebhookUrl: delivery.slackWebhookUrl,
+        payload
+      }).catch(() => undefined);
+    }
+
+    return row;
   }
 
+  // Org-wide inbox row (visible to all members) + per-member external fan-out.
   const db = getDb();
   const [row] = await db
     .insert(notifications)
     .values({
       organizationId: params.organizationId,
-      userId: params.userId ?? null,
+      userId: null,
       kind: params.kind,
       title: params.title,
       body: params.body,
-      href: params.href ?? "/notifications",
+      href,
       tone: params.tone ?? "slate",
       badge: params.badge
     })
     .returning();
+
+  void (async () => {
+    const members = await listOrgMembers(params.organizationId);
+    await Promise.allSettled(
+      members.map(async ({ user }) => {
+        const { notificationPrefs, delivery } = await getUserSettings(user.id, params.organizationId);
+        const channels = resolveChannels(notificationPrefs);
+        if (!channels.email && !channels.slack) return;
+        await deliverExternalChannels({
+          channels,
+          email: user.email,
+          slackWebhookUrl: delivery.slackWebhookUrl,
+          payload
+        });
+      })
+    );
+  })().catch(() => undefined);
+
   return row;
 }
 

@@ -201,6 +201,38 @@ export async function saveNotificationPrefsAction(
   return { success: "Notification preferences saved." };
 }
 
+const slackWebhookSchema = z.object({
+  slackWebhookUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => v === "" || v.startsWith("https://hooks.slack.com/"), {
+      message: "Use a Slack incoming webhook URL (https://hooks.slack.com/…)."
+    })
+});
+
+export async function saveSlackWebhookAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const session = await requireSession();
+  const parsed = slackWebhookSchema.safeParse({
+    slackWebhookUrl: formData.get("slackWebhookUrl") ?? ""
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid webhook." };
+
+  await saveUserSettings({
+    userId: session.user.id,
+    organizationId: session.organizationId,
+    delivery: parsed.data.slackWebhookUrl
+      ? { slackWebhookUrl: parsed.data.slackWebhookUrl }
+      : {}
+  });
+  revalidatePath("/settings/notifications");
+  return {
+    success: parsed.data.slackWebhookUrl
+      ? "Slack webhook saved."
+      : "Slack webhook cleared."
+  };
+}
+
 const workspaceSchema = z.object({
   name: z.string().trim().min(2, "Workspace name must be at least 2 characters.").max(80)
 });
