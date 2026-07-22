@@ -10,7 +10,7 @@ beforeAll(async () => {
   process.env.ENCRYPTION_KEY = "test-only-encryption-key-do-not-use-in-prod";
   process.env.AUTH_SECRET = "test-only-auth-secret";
   testDb = await createTestDb();
-});
+}, 60_000);
 
 beforeEach(async () => {
   __setDbForTests(testDb);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { callLLM, AGENTS } from "@/lib/agents";
 import { auth } from "@/lib/auth";
 import { getOrgProviderKey } from "@/lib/db/queries";
+import { createAgentRun, createNotification, finishAgentRun } from "@/lib/db/workspace";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   MAX_CONTEXT_LENGTH,
@@ -73,9 +74,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "error", message: `Unknown agent type: ${agentType}` }, { status: 400 });
   }
 
-  // Org-level BYOK: the provider key lives encrypted in Postgres, set once
-  // by an org admin under Settings → Integrations, and shared by every
-  // member of the org — not supplied per-request by the browser anymore.
   const activeKey = await getOrgProviderKey(session.organizationId, provider);
   if (!activeKey) {
     return NextResponse.json(
@@ -86,6 +84,17 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  const organizationId = session.organizationId;
+  const userId = session.user.id;
+  const run = await createAgentRun({
+    organizationId,
+    userId,
+    agentType: String(agentType),
+    provider,
+    model,
+    prompt: String(prompt)
+  });
 
   const encoder = new TextEncoder();
 
@@ -102,8 +111,39 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
       };
 
+      const completeOk = async (content: string) => {
+        await finishAgentRun({
+          id: run.id,
+          organizationId,
+          status: "succeeded",
+          resultExcerpt: content
+        });
+        try {
+          await createNotification({
+            organizationId,
+            userId,
+            kind: "Agents",
+            title: `Agent run completed · ${agentType}`,
+            body: content.slice(0, 180),
+            href: "/agents",
+            tone: "violet",
+            badge: String(agentType)
+          });
+        } catch {
+          // Notification fan-out must not fail the stream.
+        }
+      };
+
+      const completeErr = async (message: string) => {
+        await finishAgentRun({
+          id: run.id,
+          organizationId,
+          status: "failed",
+          error: message
+        });
+      };
+
       try {
-        // 1. Direct Specialist Execution
         if (agentType !== "coordinator") {
           const specialist = AGENTS[agentType];
           if (!specialist) {
@@ -111,25 +151,23 @@ export async function POST(req: NextRequest) {
           }
 
           send({ type: "status", message: `Executing ${specialist.name} Agent...` });
-          
-          let fullPrompt = prompt;
+
+          let fullPrompt = prompt as string;
           if (context) {
             fullPrompt = `CONTEXT/INPUT:\n${context}\n\nUSER PROMPT:\n${prompt}`;
           }
 
           const result = await callLLM(provider, model, activeKey, specialist.systemPrompt, fullPrompt);
-          
-          // Stream the result back in chunks for simulation, or simply send the result
+
           send({ type: "agent_result", agent: agentType, content: result });
           send({ type: "final_result", content: result });
+          await completeOk(result);
           controller.close();
           return;
         }
 
-        // 2. Multi-Agent Coordinator (CEO Flow)
         send({ type: "status", message: "CEO analyzing request intent..." });
 
-        // Let the LLM classify which specialist is needed
         const classificationSystemPrompt = `You are the Coordinator Routing Engine for Nexus AI Engineering OS.
 Given the user's prompt, select the single best specialist agent from this list:
 - "eng_lead" (for code reviews, bug analysis, refactoring, SOLID reviews, code snippets, git diffs)
@@ -150,7 +188,7 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
             model,
             activeKey,
             classificationSystemPrompt,
-            prompt
+            prompt as string
           );
           classificationResult = classificationResult.trim().toLowerCase().replace(/['"`]/g, "");
         } catch {
@@ -158,7 +196,6 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
         }
 
         let specialistKey = classificationResult;
-        // Fallback checks
         if (!AGENTS[specialistKey]) {
           specialistKey = "none";
         }
@@ -171,7 +208,7 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
             message: `CEO routing task to specialist: ${specialist.name} (${specialist.role})...`
           });
 
-          let specialistPrompt = prompt;
+          let specialistPrompt = prompt as string;
           if (context) {
             specialistPrompt = `CONTEXT:\n${context}\n\nUSER PROMPT:\n${prompt}`;
           }
@@ -202,7 +239,6 @@ Output ONLY the lowercase key (e.g. "eng_lead" or "architecture" or "none"), not
           });
         }
 
-        // Synthesize final CEO response
         send({ type: "status", message: "CEO synthesizing final executive response..." });
 
         const synthesisPrompt = `The user request: "${prompt}"
@@ -229,9 +265,12 @@ Make it professional, deep, and production-ready.`;
         );
 
         send({ type: "final_result", content: finalResult });
+        await completeOk(finalResult);
         controller.close();
       } catch (error: unknown) {
-        send({ type: "error", message: getErrorMessage(error) });
+        const message = getErrorMessage(error);
+        await completeErr(message);
+        send({ type: "error", message });
         controller.close();
       }
     }
@@ -239,10 +278,9 @@ Make it professional, deep, and production-ready.`;
 
   return new Response(stream, {
     headers: {
-      // The body is newline-delimited JSON events, not SSE.
       "Content-Type": "application/x-ndjson; charset=utf-8",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
+      Connection: "keep-alive"
     }
   });
 }

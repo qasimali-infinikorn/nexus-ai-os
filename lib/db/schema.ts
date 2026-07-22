@@ -364,3 +364,161 @@ export const userSettings = pgTable(
 );
 
 export type UserSettings = typeof userSettings.$inferSelect;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 2 workspace data — notifications, meetings, agent runs, DevOps.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const NOTIFICATION_KINDS = ["Incidents", "Reviews", "Mentions", "Agents"] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Null = org-wide broadcast visible to every member. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: NOTIFICATION_KINDS }).notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    href: text("href").notNull().default("/notifications"),
+    tone: text("tone").notNull().default("slate"),
+    badge: text("badge"),
+    unread: boolean("unread").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    index("notifications_org_created_idx").on(table.organizationId, table.createdAt),
+    index("notifications_org_user_idx").on(table.organizationId, table.userId)
+  ]
+);
+
+export type Notification = typeof notifications.$inferSelect;
+
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    location: text("location"),
+    kind: text("kind").notNull().default("internal"),
+    attendees: jsonb("attendees").$type<string[]>().notNull().default([]),
+    needsPrep: boolean("needs_prep").notNull().default(true),
+    agenda: text("agenda"),
+    source: text("source").notNull().default("manual"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index("meetings_org_starts_idx").on(table.organizationId, table.startsAt)]
+);
+
+export type Meeting = typeof meetings.$inferSelect;
+
+export const meetingActionItems = pgTable(
+  "meeting_action_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    owner: text("owner").notNull().default("—"),
+    done: boolean("done").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index("meeting_action_items_meeting_idx").on(table.meetingId)]
+);
+
+export type MeetingActionItem = typeof meetingActionItems.$inferSelect;
+
+export const AGENT_RUN_STATUSES = ["running", "succeeded", "failed"] as const;
+export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
+
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    agentType: text("agent_type").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    prompt: text("prompt").notNull(),
+    status: text("status", { enum: AGENT_RUN_STATUSES }).notNull().default("running"),
+    resultExcerpt: text("result_excerpt"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true })
+  },
+  (table) => [
+    index("agent_runs_org_created_idx").on(table.organizationId, table.createdAt),
+    index("agent_runs_org_agent_idx").on(table.organizationId, table.agentType)
+  ]
+);
+
+export type AgentRun = typeof agentRuns.$inferSelect;
+
+export const DEPLOYMENT_STATUSES = ["success", "failed", "in_progress"] as const;
+export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
+
+export const deployments = pgTable(
+  "deployments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    service: text("service").notNull(),
+    version: text("version").notNull(),
+    status: text("status", { enum: DEPLOYMENT_STATUSES }).notNull().default("success"),
+    detail: text("detail"),
+    externalId: text("external_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index("deployments_org_created_idx").on(table.organizationId, table.createdAt)]
+);
+
+export type Deployment = typeof deployments.$inferSelect;
+
+export const INCIDENT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+export const INCIDENT_STATUSES = ["open", "acknowledged", "resolved"] as const;
+export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
+export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
+
+export const incidents = pgTable(
+  "incidents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    title: text("title").notNull(),
+    severity: text("severity", { enum: INCIDENT_SEVERITIES }).notNull().default("medium"),
+    status: text("status", { enum: INCIDENT_STATUSES }).notNull().default("open"),
+    summary: text("summary"),
+    externalId: text("external_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+  },
+  (table) => [
+    uniqueIndex("incidents_org_code_unique_idx").on(table.organizationId, table.code),
+    index("incidents_org_created_idx").on(table.organizationId, table.createdAt)
+  ]
+);
+
+export type Incident = typeof incidents.$inferSelect;

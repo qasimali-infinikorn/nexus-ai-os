@@ -104,7 +104,10 @@ existing encrypted keys unreadable (org admins would need to re-enter them).
 
 See [`AUTH.md`](./AUTH.md)'s "Known gaps" for the auth-specific items (no
 org switcher, no invite emails, no password reset, no login-attempt rate
-limiting). Nothing else is currently tracked here.
+limiting). Calendar OAuth for Meetings is deferred (manual create works).
+
+Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
+(limits + proxy public routes + webhook secret handling).
 
 ## What's already safe
 
@@ -126,6 +129,8 @@ limiting). Nothing else is currently tracked here.
 | Rate limit | `/api/orchestrate` | 20 req/min per authenticated user |
 | Rate limit | `GET /api/knowledge` | 60 req/min per authenticated user |
 | Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user |
+| Rate limit | `POST /api/webhooks/devops` | 60 req/min per client IP |
+| Webhook auth | `POST /api/webhooks/devops` | `WEBHOOK_SECRET` via Bearer or `x-nexus-webhook-secret` (timing-safe) |
 | `provider` allowlist | `/api/orchestrate` | `openai` \| `anthropic` \| `google` |
 | `prompt` length | `/api/orchestrate` | 20,000 chars |
 | `context` length | `/api/orchestrate` | 100,000 chars |

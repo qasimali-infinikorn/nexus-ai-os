@@ -7,19 +7,22 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 
 | Area | Status | Notes |
 |------|--------|--------|
-| **Projects** | Partially done | DB-backed list/board/tasks (`projects`, migrations 0002–0004). Still demo for roadmap summary / Jira sync. |
-| **Agents** | Demo UI | Catalog + Run links to real specialists; run counts / “New agent” not persisted. |
-| **DevOps** | Demo UI | Needs CI / incident integrations (GitHub Actions, PagerDuty, etc.). |
-| **Meetings** | Demo UI | Needs calendar sync; `client_meeting` agent exists but isn’t a full prep flow. |
-| **Notifications** | Demo UI | Needs real event fan-out (mentions, reviews, incidents); mark-read is inert. |
-| **Dashboard** | Demo widgets | Still seeded from `lib/workspace/content.ts` with `DemoNotice`. |
+| **Projects** | Done (core) | DB-backed list/board/tasks. Roadmap/Jira sync still future. |
+| **Agents** | Done | `agent_runs` persisted from `/api/orchestrate`; catalog + live stats. |
+| **DevOps** | Done | `deployments` / `incidents` + `POST /api/webhooks/devops` (`WEBHOOK_SECRET`). |
+| **Meetings** | Done (manual) | CRUD + agendas/action items. Calendar OAuth deferred. Prep via AI Workspace. |
+| **Notifications** | Done | `notifications` inbox + mark-read; fan-out from agent runs / webhook incidents. |
+| **Dashboard** | Done | Live KPIs from meetings, tasks, incidents, agent runs. |
 
-## Remaining (suggested order)
+## Remaining (optional / later)
 
-1. Notifications — persist inbox events from org activity / agent runs  
-2. Meetings — calendar OAuth + prep via `client_meeting` agent  
-3. Agents — run history table + wire “New agent” or drop the fake CTA  
-4. DevOps — webhook ingest for deploys/incidents  
-5. Dashboard — replace demo KPIs with aggregates from the above  
+- Google / Microsoft calendar OAuth for Meetings
+- Richer notification prefs → delivery channels (email/Slack)
+- Custom agent definitions (“New agent”)
+- Jira / GitHub PR sync for Reviews notifications
 
-Phase 3 (Superadmin) can proceed in parallel; it does not block these items.
+## Migration
+
+```bash
+npm run db:migrate   # applies 0006_phase2_workspace
+```

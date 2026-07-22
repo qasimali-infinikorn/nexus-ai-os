@@ -35,6 +35,25 @@ exposing secrets.
 Probes today: Postgres, Auth.js (`AUTH_SECRET`), encryption (`ENCRYPTION_KEY`),
 Orchestrate API surface, Knowledge/embeddings readiness.
 
+## `POST /api/webhooks/devops`
+
+External CI / incident ingest. **No session** — authenticate with
+`WEBHOOK_SECRET` (`Authorization: Bearer …` or `x-nexus-webhook-secret`).
+Returns `503` if the secret is unset, `401` if it does not match (timing-safe),
+`429` when rate-limited (60/min per client IP).
+
+```ts
+// Deployment
+{ type: "deployment", organizationId: uuid, service, version,
+  status: "success" | "failed" | "in_progress", detail?, externalId? }
+
+// Incident
+{ type: "incident", organizationId: uuid, code, title,
+  severity: "critical" | "high" | "medium" | "low", summary?, externalId? }
+```
+
+Successful incident (and failed deploy) events also create inbox notifications.
+
 ## `POST /api/orchestrate`
 
 Streams newline-delimited JSON (one `JSON.stringify(event) + "\n"` per

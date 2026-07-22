@@ -1,25 +1,63 @@
 import Link from "next/link";
-import { AlertTriangle, GitPullRequest, AtSign, Sparkles, CircleCheck } from "lucide-react";
+import { redirect } from "next/navigation";
+import { AlertTriangle, GitPullRequest, AtSign, Sparkles, Bot, CircleCheck } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { NOTIFICATION_KINDS, type NotificationKind } from "@/lib/db/schema";
+import { countUnreadNotifications, listNotificationsForUser } from "@/lib/db/workspace";
+import { markAllNotificationsReadAction } from "@/lib/actions/workspace";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { Card, Pill, DemoNotice } from "@/components/workspace/ui";
-import { notifications, notificationFilters } from "@/lib/workspace/content";
+import { Card, Pill } from "@/components/workspace/ui";
+import type { Tone } from "@/lib/workspace/content";
 
-const KIND_ICON = { Incidents: AlertTriangle, Reviews: GitPullRequest, Mentions: AtSign };
+const FILTERS = ["All", ...NOTIFICATION_KINDS] as const;
+
+const KIND_ICON = {
+  Incidents: AlertTriangle,
+  Reviews: GitPullRequest,
+  Mentions: AtSign,
+  Agents: Bot
+} as const;
+
+function asTone(value: string): Tone {
+  const tones: Tone[] = ["green", "amber", "red", "blue", "slate", "violet"];
+  return tones.includes(value as Tone) ? (value as Tone) : "slate";
+}
+
+function isToday(date: Date): boolean {
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
 
 export default async function NotificationsPage({
   searchParams
 }: {
   searchParams: Promise<{ filter?: string }>;
 }) {
-  const { filter = "All" } = await searchParams;
-  const active = notificationFilters.includes(filter) ? filter : "All";
-  const list = active === "All" ? notifications : notifications.filter((n) => n.kind === active);
-  const unread = notifications.filter((n) => n.unread).length;
+  const session = await auth();
+  if (!session?.user?.id || !session.organizationId) redirect("/login");
 
-  const groups = list.reduce<Record<string, typeof list>>((acc, n) => {
-    (acc[n.group] ||= []).push(n);
-    return acc;
-  }, {});
+  const { filter = "All" } = await searchParams;
+  const active = FILTERS.includes(filter as (typeof FILTERS)[number]) ? filter : "All";
+  const kind = active === "All" ? "All" : (active as NotificationKind);
+
+  const [list, unread] = await Promise.all([
+    listNotificationsForUser({
+      organizationId: session.organizationId,
+      userId: session.user.id,
+      kind
+    }),
+    countUnreadNotifications(session.organizationId, session.user.id)
+  ]);
+
+  const today = list.filter((n) => isToday(n.createdAt));
+  const earlier = list.filter((n) => !isToday(n.createdAt));
+  const groups: { label: string; items: typeof list }[] = [];
+  if (today.length) groups.push({ label: "Today", items: today });
+  if (earlier.length) groups.push({ label: "Earlier", items: earlier });
 
   return (
     <>
@@ -29,30 +67,29 @@ export default async function NotificationsPage({
         actions={
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <div className="segmented">
-              {notificationFilters.map((f) => (
+              {FILTERS.map((f) => (
                 <Link key={f} href={`/notifications?filter=${f}`} className={f === active ? "active" : ""}>
                   {f}
                 </Link>
               ))}
             </div>
-            <button type="button" className="btn-secondary btn-sm">
-              Mark all read
-            </button>
+            <form action={markAllNotificationsReadAction}>
+              <button type="submit" className="btn-secondary btn-sm">
+                Mark all read
+              </button>
+            </form>
           </div>
         }
       />
 
-      <DemoNotice>
-        Demo notifications. Real ones appear here as GitHub, PagerDuty, and agent events are wired up.
-      </DemoNotice>
-
-      {Object.entries(groups).map(([group, items]) => (
-        <section key={group} className="stack-md">
-          <p className="section-label">{group}</p>
+      {groups.map(({ label, items }) => (
+        <section key={label} className="stack-md">
+          <p className="section-label">{label}</p>
           <Card>
             <div className="list">
               {items.map((n) => {
-                const Icon = KIND_ICON[n.kind as keyof typeof KIND_ICON] ?? Sparkles;
+                const Icon = KIND_ICON[n.kind] ?? Sparkles;
+                const tone = asTone(n.tone);
                 return (
                   <Link
                     key={n.id}
@@ -61,14 +98,11 @@ export default async function NotificationsPage({
                     style={{
                       alignItems: "flex-start",
                       gap: 14,
-                      // Unread is carried by the trailing dot + a hairline
-                      // accent edge rather than a full row tint, so a mostly
-                      // unread list doesn't read as one solid block of color.
                       boxShadow: n.unread ? "inset 3px 0 0 var(--accent)" : undefined
                     }}
                   >
                     <span
-                      className={`stat-icon ${n.tone === "red" ? "red" : n.tone === "violet" ? "violet" : n.tone === "green" ? "green" : "blue"}`}
+                      className={`stat-icon ${tone === "red" ? "red" : tone === "violet" ? "violet" : tone === "green" ? "green" : "blue"}`}
                       style={{ width: 32, height: 32, flexShrink: 0 }}
                     >
                       <Icon size={15} aria-hidden />
@@ -76,7 +110,7 @@ export default async function NotificationsPage({
                     <div className="stack" style={{ flex: 1, minWidth: 0, gap: 4 }}>
                       <span className="row" style={{ gap: 10, flexWrap: "wrap" }}>
                         <span className="title">{n.title}</span>
-                        {n.badge ? <Pill tone={n.tone}>{n.badge}</Pill> : null}
+                        {n.badge ? <Pill tone={tone}>{n.badge}</Pill> : null}
                       </span>
                       <p className="dim" style={{ fontSize: "0.85rem", lineHeight: 1.55 }}>
                         {n.body}
@@ -90,7 +124,11 @@ export default async function NotificationsPage({
                         aria-label="Unread"
                       />
                     ) : (
-                      <CircleCheck size={15} aria-hidden style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 6 }} />
+                      <CircleCheck
+                        size={15}
+                        aria-hidden
+                        style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 6 }}
+                      />
                     )}
                   </Link>
                 );

@@ -22,6 +22,24 @@ const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
 vi.mock("@/lib/db/queries", () => ({ getOrgProviderKey: (...args: [string, string]) => mockGetOrgProviderKey(...args) }));
+vi.mock("@/lib/db/workspace", () => ({
+  createAgentRun: vi.fn(async () => ({
+    id: "run-1",
+    organizationId: "test-org",
+    userId: "test-user",
+    agentType: "eng_lead",
+    provider: "openai",
+    model: "gpt-4o",
+    prompt: "Review this code",
+    status: "running",
+    resultExcerpt: null,
+    error: null,
+    createdAt: new Date(),
+    finishedAt: null
+  })),
+  finishAgentRun: vi.fn(async () => undefined),
+  createNotification: vi.fn(async () => ({ id: "n-1" }))
+}));
 
 const { POST } = await import("@/app/api/orchestrate/route");
 

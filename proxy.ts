@@ -23,8 +23,16 @@ export default auth((req) => {
   const isPublicMarketingRoute = pathname === "/";
   // Uptime / load-balancer probes — no session required.
   const isPublicHealthRoute = pathname === "/api/health";
+  // External CI/PagerDuty ingest — authenticated via WEBHOOK_SECRET, not session.
+  const isPublicWebhookRoute = pathname.startsWith("/api/webhooks/");
 
-  if (isPublicApiAuthRoute || isInviteRoute || isPublicMarketingRoute || isPublicHealthRoute) {
+  if (
+    isPublicApiAuthRoute ||
+    isInviteRoute ||
+    isPublicMarketingRoute ||
+    isPublicHealthRoute ||
+    isPublicWebhookRoute
+  ) {
     return NextResponse.next();
   }
 
