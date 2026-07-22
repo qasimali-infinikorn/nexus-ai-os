@@ -7,7 +7,8 @@ import { runPlatformHealthChecks } from "@/lib/platform/health";
  */
 export async function GET() {
   const report = await runPlatformHealthChecks();
-  return NextResponse.json(report, {
+  const { openBanners: _banners, ...publicReport } = report;
+  return NextResponse.json(publicReport, {
     status: report.ok ? 200 : 503,
     headers: {
       "Cache-Control": "no-store"

@@ -64,6 +64,13 @@
       "when": 1784726000000,
       "tag": "0008_notification_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784727000000,
+      "tag": "0009_platform_incidents",
+      "breakpoints": true
     }
   ]
 }

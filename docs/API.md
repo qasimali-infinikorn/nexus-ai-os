@@ -21,7 +21,9 @@ exposing secrets.
 {
   ok: boolean;
   checkedAt: string; // ISO
-  incidentCount: number;
+  incidentCount: number; // unhealthy probes + open platform banners
+  probeIncidentCount: number;
+  openBannerCount: number;
   checks: {
     id: string;
     name: string;

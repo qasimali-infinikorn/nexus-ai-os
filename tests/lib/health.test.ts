@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { __setDbForTests, type Database } from "@/lib/db/client";
 import { runPlatformHealthChecks } from "@/lib/platform/health";
 import { createTestDb } from "../helpers/testDb";
-import { organizations, users, memberships, invitations, auditLog, featureFlags, featureFlagTenants } from "@/lib/db/schema";
+import { organizations, users, memberships, invitations, auditLog, featureFlags, featureFlagTenants, platformIncidents } from "@/lib/db/schema";
 
 let testDb: Database;
 
@@ -14,6 +14,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   __setDbForTests(testDb);
+  await testDb.delete(platformIncidents);
   await testDb.delete(featureFlagTenants);
   await testDb.delete(featureFlags);
   await testDb.delete(auditLog);

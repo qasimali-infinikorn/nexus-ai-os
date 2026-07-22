@@ -209,7 +209,7 @@ Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
 
 - Stripe invoice sync / real MRR
 - ~~Per-tenant flag override UI on tenant detail~~ **done** (`/admin/tenants/[orgId]`)
-- Manual incident banners / on-call workflow
+- ~~Manual incident banners / on-call workflow~~ **done** (banners + resolve on `/admin/status`; full on-call paging still later)
 - Impersonation (explicitly deferred)
 
 ## 8. Out of scope (explicit)

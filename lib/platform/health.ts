@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { organizations } from "@/lib/db/schema";
+import { organizations, type PlatformIncident } from "@/lib/db/schema";
+import { listOpenPlatformIncidents } from "@/lib/db/platform-incidents";
 
 export type HealthStatus = "healthy" | "degraded" | "down";
 
@@ -16,8 +17,11 @@ export type PlatformHealthReport = {
   ok: boolean;
   checkedAt: string;
   checks: HealthCheck[];
-  /** Count of checks that are not healthy (used for nav badge / Overview KPI). */
+  /** Unhealthy probes + open manual banners (nav badge / Overview KPI). */
   incidentCount: number;
+  probeIncidentCount: number;
+  openBannerCount: number;
+  openBanners: PlatformIncident[];
 };
 
 async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; latencyMs: number }> {
@@ -115,11 +119,22 @@ export async function runPlatformHealthChecks(): Promise<PlatformHealthReport> {
     checkEmbeddings()
   ];
 
-  const incidentCount = checks.filter((c) => c.status !== "healthy").length;
+  const probeIncidentCount = checks.filter((c) => c.status !== "healthy").length;
+  let openBanners: PlatformIncident[] = [];
+  try {
+    openBanners = await listOpenPlatformIncidents();
+  } catch {
+    openBanners = [];
+  }
+  const openBannerCount = openBanners.length;
+  const incidentCount = probeIncidentCount + openBannerCount;
   return {
     ok: incidentCount === 0,
     checkedAt: new Date().toISOString(),
     checks,
-    incidentCount
+    incidentCount,
+    probeIncidentCount,
+    openBannerCount,
+    openBanners
   };
 }

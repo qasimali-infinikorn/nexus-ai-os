@@ -84,7 +84,9 @@ export default async function AdminOverviewPage() {
           </div>
           <p className="stat-value">{health.incidentCount}</p>
           <p className="dim" style={{ fontSize: "0.8rem" }}>
-            {health.ok ? "All probes healthy" : "See System Status"}
+            {health.ok
+              ? "All clear"
+              : `${health.probeIncidentCount} probe · ${health.openBannerCount} banner`}
           </p>
         </Link>
       </div>

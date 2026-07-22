@@ -587,3 +587,29 @@ export const orgCustomAgents = pgTable(
 );
 
 export type OrgCustomAgent = typeof orgCustomAgents.$inferSelect;
+
+/** Platform-wide status banners (Superadmin System Status), not tenant DevOps incidents. */
+export const PLATFORM_INCIDENT_SEVERITIES = ["critical", "high", "medium", "low"] as const;
+export const PLATFORM_INCIDENT_STATUSES = ["open", "resolved"] as const;
+export type PlatformIncidentSeverity = (typeof PLATFORM_INCIDENT_SEVERITIES)[number];
+export type PlatformIncidentStatus = (typeof PLATFORM_INCIDENT_STATUSES)[number];
+
+export const platformIncidents = pgTable(
+  "platform_incidents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    severity: text("severity", { enum: PLATFORM_INCIDENT_SEVERITIES }).notNull().default("medium"),
+    status: text("status", { enum: PLATFORM_INCIDENT_STATUSES }).notNull().default("open"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+  },
+  (table) => [
+    index("platform_incidents_status_created_idx").on(table.status, table.createdAt)
+  ]
+);
+
+export type PlatformIncident = typeof platformIncidents.$inferSelect;
