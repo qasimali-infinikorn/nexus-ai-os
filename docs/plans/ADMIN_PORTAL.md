@@ -194,11 +194,23 @@ badges: tenant count on Tenants; incident count on System Status when > 0.
 
 ### Phase 3.4 — Polish
 
-- [ ] Match Superadmin visual density (dark default, KPI cards, charts)
-- [ ] Loading skeletons (reuse `PageLoadingSkeleton`)
-- [ ] Admin-only command palette entries
+- [x] Match Superadmin visual density (dark default, KPI cards, charts)
+- [x] Loading skeletons (reuse `PageLoadingSkeleton` / `AdminPageLoadingSkeleton`)
+- [x] Admin-only command palette entries (`⌘K` / Ctrl+K in Superadmin)
+
+Admin theme: **force dark** via `data-theme="dark"` on `.admin-root` (open decision #3).
+MRR chart is an empty shell (zeros + overlay) — never invents revenue.
 
 ---
+
+## Phase 3 complete
+
+Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
+
+- Stripe invoice sync / real MRR
+- Per-tenant flag override UI on tenant detail
+- Manual incident banners / on-call workflow
+- Impersonation (explicitly deferred)
 
 ## 8. Out of scope (explicit)
 
@@ -224,6 +236,6 @@ badges: tenant count on Tenants; incident count on System Status when > 0.
 1. **Billing source**: Stripe from day one vs. manual plan fields until revenue is real?
    → **Decided for 3.3a**: honest empty $ KPIs; live plan_tier mix only. Stripe sync later.
 2. **Impersonation**: ship in 3.1 or permanently defer?
+   → **Deferred** (high risk; not in Phase 3).
 3. **Admin theme**: force dark, or respect user theme toggle?
-
-Resolve these before Phase 3.1 schema freeze.
+   → **Force dark** on `.admin-root` for operator chrome.

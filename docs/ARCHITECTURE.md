@@ -16,8 +16,8 @@ migrating the original 6 features into it; Projects/Agents/DevOps/
 Meetings/Notifications are real routes with honest "coming soon" states
 until Phase 2, and `/admin` (Superadmin) is Phase 3 — see
 [`docs/plans/ADMIN_PORTAL.md`](./plans/ADMIN_PORTAL.md) for the
-implementation plan derived from `DESING/Nexus Superadmin.html`. Phase 3.0
-(shell, gate, Overview) is in place; later phases add tenants, flags, billing.
+implementation plan derived from `DESING/Nexus Superadmin.html`. Phase 3
+(shell through polish) is implemented; Stripe sync and impersonation remain backlog.
 
 ## Stack
 
@@ -235,4 +235,4 @@ is a separate decision from the API-layer harness added here.
   slow proportional to its chunk count.
 - Agents/DevOps/Projects/Meetings/Notifications are real routes with honest
   empty states, not real data yet — Phase 2.
-- Superadmin Phase 3.0 shell at `/admin` (`isPlatformAdmin`-gated); tenants/flags/billing still Phase 3.1+.
+- Superadmin console at `/admin` (`isPlatformAdmin`-gated): tenants, flags, billing empty-state, health probes, audit.
