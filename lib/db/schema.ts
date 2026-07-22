@@ -195,6 +195,61 @@ export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Platform feature flags (Superadmin). Global rows + optional per-tenant
+// overrides. Resolution lives in lib/db/feature-flags.ts.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const FEATURE_FLAG_STATUSES = ["ga", "beta", "alpha"] as const;
+export const FEATURE_FLAG_AUDIENCES = [
+  "all",
+  "business_plus",
+  "enterprise",
+  "opt_in",
+  "tenant_list"
+] as const;
+
+export type FeatureFlagStatus = (typeof FEATURE_FLAG_STATUSES)[number];
+export type FeatureFlagAudience = (typeof FEATURE_FLAG_AUDIENCES)[number];
+
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    key: text("key").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    status: text("status", { enum: FEATURE_FLAG_STATUSES }).notNull().default("ga"),
+    audience: text("audience", { enum: FEATURE_FLAG_AUDIENCES }).notNull().default("all"),
+    enabled: boolean("enabled").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" })
+  }
+);
+
+export const featureFlagTenants = pgTable(
+  "feature_flag_tenants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    flagKey: text("flag_key")
+      .notNull()
+      .references(() => featureFlags.key, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("feature_flag_tenants_flag_org_unique_idx").on(table.flagKey, table.organizationId),
+    index("feature_flag_tenants_organization_id_idx").on(table.organizationId)
+  ]
+);
+
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type NewFeatureFlag = typeof featureFlags.$inferInsert;
+export type FeatureFlagTenant = typeof featureFlagTenants.$inferSelect;
+export type NewFeatureFlagTenant = typeof featureFlagTenants.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // Project tasks — the first slice of workspace content promoted from the
 // seed module (lib/workspace/content.ts) into real, editable rows, because
 // the Kanban board mutates them (drag between columns, create, edit).

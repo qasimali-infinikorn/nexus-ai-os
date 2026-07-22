@@ -5,10 +5,11 @@ import { Card } from "@/components/workspace/ui";
 import { formatAdminDateTime } from "@/lib/workspace/admin-ui";
 
 const ACTION_FILTERS = [
-  { id: "all", label: "All", action: undefined },
-  { id: "create", label: "Create", action: "platform.tenant.create" },
-  { id: "suspend", label: "Suspend", action: "platform.tenant.suspend" },
-  { id: "restore", label: "Restore", action: "platform.tenant.restore" }
+  { id: "all", label: "All", action: undefined as string | undefined, actionPrefix: undefined as string | undefined },
+  { id: "create", label: "Create", action: "platform.tenant.create", actionPrefix: undefined },
+  { id: "suspend", label: "Suspend", action: "platform.tenant.suspend", actionPrefix: undefined },
+  { id: "restore", label: "Restore", action: "platform.tenant.restore", actionPrefix: undefined },
+  { id: "flags", label: "Flags", action: undefined, actionPrefix: "platform.flag." }
 ] as const;
 
 function actionLabel(action: string): string {
@@ -19,6 +20,12 @@ function actionLabel(action: string): string {
       return "Suspended tenant";
     case "platform.tenant.restore":
       return "Restored tenant";
+    case "platform.flag.enable":
+      return "Enabled flag";
+    case "platform.flag.disable":
+      return "Disabled flag";
+    case "platform.flag.audience":
+      return "Changed flag audience";
     default:
       return action;
   }
@@ -34,7 +41,8 @@ export default async function AdminAuditPage({
   const selected = ACTION_FILTERS.find((f) => f.id === params.action) ?? ACTION_FILTERS[0];
   const events = await listPlatformAuditEvents({
     limit: 100,
-    action: selected.action
+    action: selected.action,
+    actionPrefix: selected.actionPrefix
   });
 
   return (
@@ -87,6 +95,8 @@ export default async function AdminAuditPage({
                         <Link href={`/admin/tenants/${event.targetId}`}>
                           {name ?? event.targetId.slice(0, 8)}
                         </Link>
+                      ) : event.targetType === "feature_flag" ? (
+                        <Link href="/admin/flags">{name ?? event.targetId}</Link>
                       ) : (
                         <span className="dim">
                           {event.targetType ?? "—"}

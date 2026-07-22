@@ -22,6 +22,8 @@ export interface NavItem {
   description: string;
   /** Count pill shown on the right of the nav row (mockup: Code Review, Notifications). */
   badge?: number;
+  /** When set, the item is hidden unless this feature flag is on for the org. */
+  featureFlag?: string;
 }
 
 export interface NavGroup {
@@ -38,7 +40,8 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/ai-workspace",
         label: "AI Workspace",
         icon: Sparkles,
-        description: "Route a task to the right specialist and get an executive synthesis."
+        description: "Route a task to the right specialist and get an executive synthesis.",
+        featureFlag: "ai-workspace"
       },
       { href: "/agents", label: "Agents", icon: Bot, description: "Specialist agents and their run history." }
     ]
@@ -82,9 +85,16 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/proposal-studio",
         label: "Proposal Studio",
         icon: FileText,
-        description: "Turn problem specs into client-ready proposals in business language."
+        description: "Turn problem specs into client-ready proposals in business language.",
+        featureFlag: "proposal-studio"
       },
-      { href: "/meetings", label: "Meetings", icon: CalendarClock, description: "Agendas and meeting prep." }
+      {
+        href: "/meetings",
+        label: "Meetings",
+        icon: CalendarClock,
+        description: "Agendas and meeting prep.",
+        featureFlag: "live-meetings"
+      }
     ]
   },
   {

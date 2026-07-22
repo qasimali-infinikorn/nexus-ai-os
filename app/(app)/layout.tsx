@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
+import { getFeatureFlagsForOrg } from "@/lib/db/feature-flags";
 import { AppShell } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
 import { NexusAssistant } from "@/components/app-shell/nexus-assistant";
@@ -29,6 +30,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login?stale=1");
   }
 
+  const featureFlags = await getFeatureFlagsForOrg(session.organizationId);
+
   const roleLabel = ROLE_LABELS[session.role ?? "member"] ?? "Member";
   const firstName = session.user.name?.split(/\s+/)[0] || "there";
 
@@ -43,8 +46,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         roleLabel={`${roleLabel} · ${session.organizationName ?? "Workspace"}`}
         orgName={session.organizationName ?? "Workspace"}
         isPlatformAdmin={Boolean(session.user.isPlatformAdmin)}
+        featureFlags={featureFlags}
       >
-        <Topbar />
+        <Topbar featureFlags={featureFlags} />
         <main id="main" className="main-content" tabIndex={-1}>
           {children}
         </main>

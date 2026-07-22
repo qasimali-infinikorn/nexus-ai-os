@@ -9,7 +9,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { useShellLayout } from "./shell-layout";
 import { CommandPalette } from "./command-palette";
 
-export function Topbar() {
+export function Topbar({ featureFlags = {} }: { featureFlags?: Record<string, boolean> }) {
   const pathname = usePathname();
   const current = findNavItem(pathname);
   const { sidebarCollapsed, contextPanelOpen, toggleSidebar, toggleContextPanel } =
@@ -85,7 +85,9 @@ export function Topbar() {
         </div>
       </header>
 
-      {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
+      {paletteOpen ? (
+        <CommandPalette featureFlags={featureFlags} onClose={() => setPaletteOpen(false)} />
+      ) : null}
     </>
   );
 }

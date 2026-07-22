@@ -36,6 +36,13 @@
       "when": 1784704966304,
       "tag": "0004_talented_goliath",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784713041197,
+      "tag": "0005_feature_flags",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@
 // Thin wrappers over Drizzle so route handlers/server actions stay small —
 // see lib/db/client.ts for the getDb() lazy-connection pattern these build on.
 
-import { and, asc, desc, eq, gte, isNull, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, like, max, sql } from "drizzle-orm";
 import { getDb } from "./client";
 import { encryptSecret, decryptSecret, generateToken } from "../crypto";
 import {
@@ -346,12 +346,15 @@ export type PlatformAuditEvent = AuditLogEntry & {
 export async function listPlatformAuditEvents(params?: {
   limit?: number;
   action?: string;
+  actionPrefix?: string;
 }): Promise<PlatformAuditEvent[]> {
   const db = getDb();
   const limit = Math.min(Math.max(params?.limit ?? 50, 1), 200);
   const conditions = [isNull(auditLog.organizationId)];
   if (params?.action) {
     conditions.push(eq(auditLog.action, params.action));
+  } else if (params?.actionPrefix) {
+    conditions.push(like(auditLog.action, `${params.actionPrefix}%`));
   }
 
   const rows = await db

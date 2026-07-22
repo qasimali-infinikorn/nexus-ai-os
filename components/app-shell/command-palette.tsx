@@ -6,26 +6,39 @@ import { Search } from "lucide-react";
 import { ALL_NAV_ITEMS } from "./nav-config";
 
 /** Mount only while open so search state resets without effect setState. */
-export function CommandPalette({ onClose }: { onClose: () => void }) {
+export function CommandPalette({
+  onClose,
+  featureFlags = {}
+}: {
+  onClose: () => void;
+  featureFlags?: Record<string, boolean>;
+}) {
   const router = useRouter();
   const titleId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
+  const navItems = useMemo(
+    () => ALL_NAV_ITEMS.filter((item) => !item.featureFlag || featureFlags[item.featureFlag]),
+    [featureFlags]
+  );
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) {
       // Design default "Jump to" list: first 9 primary destinations.
-      return ALL_NAV_ITEMS.slice(0, 9);
+      return navItems.slice(0, 9);
     }
-    return ALL_NAV_ITEMS.filter(
-      (item) =>
-        item.label.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        item.href.toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [query]);
+    return navItems
+      .filter(
+        (item) =>
+          item.label.toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q) ||
+          item.href.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [query, navItems]);
 
   useEffect(() => {
     const t = window.setTimeout(() => inputRef.current?.focus(), 10);

@@ -175,8 +175,12 @@ Add-tenant creates an org + owner invite; impersonation remains deferred.
 
 ### Phase 3.2 — Feature flags (2–3 days)
 
-- [ ] Schema + admin toggles UI
-- [ ] Tenant app helper to gate routes/UI (start with 1–2 flags, e.g. `proposal-studio`)
+- [x] Schema + admin toggles UI
+- [x] Tenant app helper to gate routes/UI (start with 1–2 flags, e.g. `proposal-studio`)
+
+Seeded keys: `ai-workspace`, `live-meetings`, `proposal-studio`, `byo-model`, `sso-scim`,
+`usage-billing`. Nav + route layouts gate the first three; resolution is
+`getFeatureFlagsForOrg` / `isFeatureEnabledForOrg` (audience + tenant overrides).
 
 ### Phase 3.3 — Billing & Status (3–5 days)
 
@@ -205,7 +209,7 @@ Add-tenant creates an org + owner invite; impersonation remains deferred.
 
 - [x] Platform admin can open `/admin` and see live tenant count from DB
 - [x] Non-admin cannot open `/admin` (proxy + layout)
-- [ ] Flag toggle is audited and reflected for a test org within one request cycle
+- [x] Flag toggle is audited and reflected for a test org within one request cycle
 - [x] Mockup IA (6 nav items) is fully routed, even if Billing/Status start as honest empty states
 - [x] Tenant list filters + suspend/restore write platform audit events
 

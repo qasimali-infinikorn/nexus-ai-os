@@ -34,16 +34,23 @@ export function AppShell({
   roleLabel,
   orgName,
   isPlatformAdmin = false,
+  featureFlags = {},
   children
 }: {
   userName: string;
   roleLabel: string;
   orgName: string;
   isPlatformAdmin?: boolean;
+  featureFlags?: Record<string, boolean>;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  const navGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.featureFlag || featureFlags[item.featureFlag])
+  })).filter((group) => group.items.length > 0);
 
   return (
     <ShellLayoutProvider>
@@ -82,7 +89,7 @@ export function AppShell({
             </div>
 
             <nav aria-label="Primary">
-              {NAV_GROUPS.map((group) => (
+              {navGroups.map((group) => (
                 <div className="sidebar-nav-group" key={group.label}>
                   <p className="sidebar-nav-group-label">{group.label}</p>
                   {group.items.map((item) => {
