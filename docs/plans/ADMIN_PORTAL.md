@@ -208,7 +208,7 @@ MRR chart is an empty shell (zeros + overlay) — never invents revenue.
 Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
 
 - Stripe invoice sync / real MRR
-- Per-tenant flag override UI on tenant detail
+- ~~Per-tenant flag override UI on tenant detail~~ **done** (`/admin/tenants/[orgId]`)
 - Manual incident banners / on-call workflow
 - Impersonation (explicitly deferred)
 

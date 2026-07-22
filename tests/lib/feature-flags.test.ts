@@ -6,8 +6,10 @@ import {
   getFeatureFlagsForOrg,
   isFeatureEnabledForOrg,
   listFeatureFlags,
+  listTenantFeatureFlagStates,
   setFeatureFlagEnabled,
-  setFeatureFlagTenantOverride
+  setFeatureFlagTenantOverride,
+  clearFeatureFlagTenantOverride
 } from "@/lib/db/feature-flags";
 import { featureFlagTenants, featureFlags, organizations, users, memberships, invitations, auditLog } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/testDb";
@@ -123,5 +125,38 @@ describe("feature flags", () => {
 
     const map = await getFeatureFlagsForOrg(organization.id);
     expect(map["usage-billing"]).toBe(true);
+  });
+
+  it("lists tenant flag states and clears overrides back to inherit", async () => {
+    const { organization } = await createUserAndOrg({
+      email: "matrix@example.com",
+      name: "M",
+      passwordHash: "h",
+      organizationName: "Matrix Org"
+    });
+    await ensureFeatureFlagsSeeded();
+
+    const before = await listTenantFeatureFlagStates(organization.id);
+    const usage = before.find((r) => r.flag.key === "usage-billing");
+    expect(usage?.override).toBeNull();
+    expect(usage?.inherited).toBe(false);
+    expect(usage?.effective).toBe(false);
+
+    await setFeatureFlagTenantOverride({
+      flagKey: "usage-billing",
+      organizationId: organization.id,
+      enabled: true
+    });
+    const forced = await listTenantFeatureFlagStates(organization.id);
+    expect(forced.find((r) => r.flag.key === "usage-billing")?.override).toBe(true);
+    expect(forced.find((r) => r.flag.key === "usage-billing")?.effective).toBe(true);
+
+    await clearFeatureFlagTenantOverride({
+      flagKey: "usage-billing",
+      organizationId: organization.id
+    });
+    const cleared = await listTenantFeatureFlagStates(organization.id);
+    expect(cleared.find((r) => r.flag.key === "usage-billing")?.override).toBeNull();
+    expect(cleared.find((r) => r.flag.key === "usage-billing")?.effective).toBe(false);
   });
 });

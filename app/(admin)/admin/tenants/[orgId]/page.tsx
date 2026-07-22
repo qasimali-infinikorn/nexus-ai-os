@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth/require-platform-admin";
 import { getTenantDetailForAdmin } from "@/lib/db/queries";
+import { listTenantFeatureFlagStates } from "@/lib/db/feature-flags";
 import { Card, CardHead, Pill } from "@/components/workspace/ui";
 import { TenantStatusForm } from "@/components/admin/tenant-status-form";
+import { TenantFlagOverrides } from "@/components/admin/tenant-flag-overrides";
 import { formatAdminDate, PLAN_LABELS, STATUS_LABELS, statusTone } from "@/lib/workspace/admin-ui";
 
 export default async function AdminTenantDetailPage({
@@ -18,10 +20,15 @@ export default async function AdminTenantDetailPage({
   if (!detail) notFound();
 
   const { organization, members, pendingInvites } = detail;
+  const flagStates = await listTenantFeatureFlagStates(organization.id);
 
   return (
     <div className="stack-lg">
-      <Link href="/admin/tenants" className="row dim" style={{ gap: 6, fontSize: "0.875rem", textDecoration: "none", width: "fit-content" }}>
+      <Link
+        href="/admin/tenants"
+        className="row dim"
+        style={{ gap: 6, fontSize: "0.875rem", textDecoration: "none", width: "fit-content" }}
+      >
         <ArrowLeft size={14} aria-hidden />
         Tenants
       </Link>
@@ -56,6 +63,30 @@ export default async function AdminTenantDetailPage({
           <p style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>{pendingInvites}</p>
         </Card>
       </div>
+
+      <Card className="table-scroll admin-table-card">
+        <div style={{ padding: "1rem 1.25rem 0" }}>
+          <CardHead
+            title="Feature flags"
+            sub="Overrides win over global audience. Inherit restores plan rules."
+            bordered
+          />
+        </div>
+        <div style={{ padding: "0 0 0.5rem" }}>
+          <TenantFlagOverrides
+            organizationId={organization.id}
+            rows={flagStates.map((s) => ({
+              key: s.flag.key,
+              name: s.flag.name,
+              description: s.flag.description,
+              audience: s.flag.audience,
+              effective: s.effective,
+              override: s.override,
+              inherited: s.inherited
+            }))}
+          />
+        </div>
+      </Card>
 
       <Card className="table-scroll admin-table-card">
         <div style={{ padding: "1rem 1.25rem 0" }}>

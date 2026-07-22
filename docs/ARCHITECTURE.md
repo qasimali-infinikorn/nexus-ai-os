@@ -18,6 +18,7 @@ until Phase 2, and `/admin` (Superadmin) is Phase 3 — see
 [`docs/plans/ADMIN_PORTAL.md`](./plans/ADMIN_PORTAL.md) for the
 implementation plan derived from `DESING/Nexus Superadmin.html`. Phase 3
 (shell through polish) is implemented; Stripe sync and impersonation remain backlog.
+Per-tenant feature flag overrides are editable on `/admin/tenants/[orgId]`.
 
 ## Stack
 

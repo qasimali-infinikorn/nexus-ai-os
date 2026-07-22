@@ -204,3 +204,50 @@ export async function setFeatureFlagTenantOverride(params: {
       set: { enabled: params.enabled, updatedAt: new Date() }
     });
 }
+
+export async function clearFeatureFlagTenantOverride(params: {
+  flagKey: string;
+  organizationId: string;
+}): Promise<void> {
+  const db = getDb();
+  await db
+    .delete(featureFlagTenants)
+    .where(
+      and(
+        eq(featureFlagTenants.flagKey, params.flagKey),
+        eq(featureFlagTenants.organizationId, params.organizationId)
+      )
+    );
+}
+
+/** Effective + override state for the admin tenant detail matrix. */
+export async function listTenantFeatureFlagStates(organizationId: string): Promise<
+  {
+    flag: FeatureFlag;
+    effective: boolean;
+    override: boolean | null;
+    inherited: boolean;
+  }[]
+> {
+  const flags = await listFeatureFlags();
+  const db = getDb();
+  const [org] = await db
+    .select({ planTier: organizations.planTier })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  if (!org) return [];
+
+  const overrides = await db
+    .select()
+    .from(featureFlagTenants)
+    .where(eq(featureFlagTenants.organizationId, organizationId));
+  const byKey = new Map(overrides.map((o) => [o.flagKey, o.enabled]));
+
+  return flags.map((flag) => {
+    const override = byKey.has(flag.key) ? Boolean(byKey.get(flag.key)) : null;
+    const inherited = flag.enabled && audienceAllowsPlan(flag.audience, org.planTier);
+    const effective = override !== null ? override : inherited;
+    return { flag, effective, override, inherited };
+  });
+}
