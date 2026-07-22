@@ -14,7 +14,9 @@ mockups (a 13-section engineering workspace plus a separate Superadmin
 console). Phase 1 covers accounts/orgs/roles, the new navigation shell, and
 migrating the original 6 features into it; Projects/Agents/DevOps/
 Meetings/Notifications are real routes with honest "coming soon" states
-until Phase 2, and `/admin` (Superadmin) is Phase 3.
+until Phase 2, and `/admin` (Superadmin) is Phase 3 — see
+[`docs/plans/ADMIN_PORTAL.md`](./plans/ADMIN_PORTAL.md) for the
+implementation plan derived from `DESING/Nexus Superadmin.html`.
 
 ## Stack
 

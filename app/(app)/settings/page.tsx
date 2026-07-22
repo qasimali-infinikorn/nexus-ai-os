@@ -2,7 +2,9 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { getUserById } from "@/lib/db/queries";
 import { Card, CardHead, Pill, Avatar, Bar, DemoNotice } from "@/components/workspace/ui";
-import { usageStats, connectedServices, preferences } from "@/lib/workspace/content";
+import { usageStats } from "@/lib/workspace/content";
+import { connectedServices, apiKeys } from "@/lib/workspace/settings-content";
+import { KeyRound, Plus } from "lucide-react";
 import { ProfileForm } from "./profile-form";
 
 function initials(name: string) {
@@ -77,21 +79,6 @@ export default async function ProfileSettingsPage() {
       </Card>
 
       <Card>
-        <CardHead title="Preferences" bordered />
-        <div className="list">
-          {preferences.map((p) => (
-            <div key={p.id} className="list-row">
-              <div className="stack" style={{ flex: 1 }}>
-                <span className="title">{p.title}</span>
-                <span className="meta">{p.body}</span>
-              </div>
-              <Pill tone={p.on ? "green" : "slate"}>{p.on ? "On" : "Off"}</Pill>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
         <CardHead
           title="Connected services"
           sub="Managed per organization"
@@ -103,14 +90,47 @@ export default async function ProfileSettingsPage() {
           bordered
         />
         <div className="list">
-          {connectedServices.map((s) => (
-            <div key={s.id} className="list-row">
-              <Avatar initials={s.initials} index={s.avatarIndex} square />
+          {connectedServices.map((svc) => (
+            <div key={svc.id} className="list-row">
+              <Avatar initials={svc.initials} index={svc.avatarIndex} square />
               <div className="stack" style={{ flex: 1, minWidth: 0 }}>
-                <span className="title">{s.name}</span>
-                <span className="meta truncate">{s.detail}</span>
+                <span className="title">{svc.name}</span>
+                <span className="meta truncate">{svc.detail}</span>
               </div>
-              <Pill tone={s.connected ? "green" : "slate"}>{s.connected ? "Connected" : "Connect"}</Pill>
+              <Pill tone={svc.state === "Connected" ? "green" : "amber"}>{svc.state}</Pill>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHead
+          title="API keys"
+          sub="Programmatic access to this workspace"
+          action={
+            <button type="button" className="btn-secondary btn-sm" disabled title="Not implemented yet">
+              <Plus size={13} aria-hidden />
+              <span>Generate</span>
+            </button>
+          }
+          bordered
+        />
+        <div className="card-pad">
+          <DemoNotice>
+            Sample keys — issuing real API keys isn&rsquo;t implemented yet, so nothing here grants access.
+          </DemoNotice>
+        </div>
+        <div className="list">
+          {apiKeys.map((k) => (
+            <div key={k.id} className="list-row">
+              <span className="stat-icon violet" style={{ width: 32, height: 32 }}>
+                <KeyRound size={15} aria-hidden />
+              </span>
+              <div className="stack" style={{ flex: 1, minWidth: 0 }}>
+                <span className="title">{k.name}</span>
+                <span className="meta mono">{k.masked}</span>
+              </div>
+              <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>{k.lastUsed}</span>
             </div>
           ))}
         </div>

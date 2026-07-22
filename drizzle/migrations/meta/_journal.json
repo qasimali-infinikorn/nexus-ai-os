@@ -15,6 +15,27 @@
       "when": 1784628594644,
       "tag": "0001_absurd_praxagora",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784700096233,
+      "tag": "0002_aspiring_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784702989517,
+      "tag": "0003_fast_iron_fist",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784704966304,
+      "tag": "0004_talented_goliath",
+      "breakpoints": true
     }
   ]
 }

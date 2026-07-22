@@ -193,3 +193,119 @@ export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Project tasks — the first slice of workspace content promoted from the
+// seed module (lib/workspace/content.ts) into real, editable rows, because
+// the Kanban board mutates them (drag between columns, create, edit).
+//
+// Scoped by `projectSlug` rather than a projects FK: the project list is
+// still display-only demo content, so a full projects table would be dead
+// weight. When projects become editable this gains a proper FK.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const TASK_STATUSES = ["To Do", "In Progress", "In Review", "Done"] as const;
+export const TASK_KINDS = ["story", "bug", "task"] as const;
+export const TASK_PRIORITIES = ["Critical", "High", "Med", "Low"] as const;
+
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+export type TaskKind = (typeof TASK_KINDS)[number];
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export const projectTasks = pgTable(
+  "project_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    projectSlug: text("project_slug").notNull(),
+    /** Human-facing key, e.g. "NX-2140". Unique per organization. */
+    ref: text("ref").notNull(),
+    kind: text("kind", { enum: TASK_KINDS }).notNull().default("task"),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status", { enum: TASK_STATUSES }).notNull().default("To Do"),
+    priority: text("priority", { enum: TASK_PRIORITIES }).notNull().default("Med"),
+    points: integer("points").notNull().default(1),
+    assignee: text("assignee").notNull().default("—"),
+    avatarIndex: integer("avatar_index").notNull().default(0),
+    // Sprint-day span (1..10) driving the Timeline view.
+    startDay: integer("start_day").notNull().default(1),
+    endDay: integer("end_day").notNull().default(1),
+    // Position within its status column; gaps are fine, only order matters.
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("project_tasks_org_ref_unique_idx").on(table.organizationId, table.ref),
+    index("project_tasks_org_project_idx").on(table.organizationId, table.projectSlug)
+  ]
+);
+
+export type ProjectTask = typeof projectTasks.$inferSelect;
+export type NewProjectTask = typeof projectTasks.$inferInsert;
+
+// Projects — promoted out of the seed module for the same reason as
+// project_tasks: the "New project" flow creates them, so they need to be
+// real rows. Seeded lazily per organization from lib/workspace/content.ts.
+
+export const PROJECT_STATUSES = ["On track", "At risk", "Off track"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    /** Ticket prefix, e.g. "NX" -> NX-2142. */
+    key: text("key").notNull(),
+    initials: text("initials").notNull(),
+    avatarIndex: integer("avatar_index").notNull().default(0),
+    accent: text("accent").notNull().default("#2563eb"),
+    lead: text("lead").notNull(),
+    status: text("status", { enum: PROJECT_STATUSES }).notNull().default("On track"),
+    sprintLabel: text("sprint_label").notNull().default("Sprint 1 · day 1/10"),
+    progress: integer("progress").notNull().default(0),
+    openIssues: integer("open_issues").notNull().default(0),
+    engineers: integer("engineers").notNull().default(1),
+    /** Red footer callout, e.g. "1 blocker" / "2 incidents". */
+    warning: text("warning"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex("projects_org_slug_unique_idx").on(table.organizationId, table.slug)]
+);
+
+export type Project = typeof projects.$inferSelect;
+export type NewProject = typeof projects.$inferInsert;
+
+// Per-user, per-organization preferences (notification matrix, appearance).
+// Stored as jsonb rather than a column per switch so adding a notification
+// channel or event doesn't need a migration.
+
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** { [eventId]: { inApp: bool, email: bool, slack: bool } } */
+    notificationPrefs: jsonb("notification_prefs"),
+    /** { reduceMotion: bool, comfortableDensity: bool, ... } */
+    appearance: jsonb("appearance"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex("user_settings_user_org_unique_idx").on(table.userId, table.organizationId)]
+);
+
+export type UserSettings = typeof userSettings.$inferSelect;

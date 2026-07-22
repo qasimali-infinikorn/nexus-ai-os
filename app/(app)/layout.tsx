@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { getOrganizationById } from "@/lib/db/queries";
 import { AppShell } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
+import { NexusAssistant } from "@/components/app-shell/nexus-assistant";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -18,7 +20,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
+  // The session is a JWT, so it can outlive the organization it points at
+  // (org deleted, database restored from an older snapshot). Without this
+  // check every org-scoped query downstream fails on a foreign key and the
+  // whole app 500s; bouncing to /login lets the user sign in cleanly.
+  const organization = await getOrganizationById(session.organizationId);
+  if (!organization) {
+    redirect("/login?stale=1");
+  }
+
   const roleLabel = ROLE_LABELS[session.role ?? "member"] ?? "Member";
+  const firstName = session.user.name?.split(/\s+/)[0] || "there";
 
   return (
     <>
@@ -36,6 +48,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </AppShell>
+
+      <NexusAssistant firstName={firstName} />
     </>
   );
 }

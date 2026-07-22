@@ -8,7 +8,10 @@ const TABS = [
   { href: "/settings", label: "Profile" },
   { href: "/settings/team", label: "Team" },
   { href: "/settings/security", label: "Security" },
-  { href: "/settings/integrations", label: "Integrations" }
+  { href: "/settings/notifications", label: "Notifications" },
+  { href: "/settings/billing", label: "Billing" },
+  { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/workspace", label: "Workspace" }
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {

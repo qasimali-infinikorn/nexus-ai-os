@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Sparkles, Play, Copy, Download, Share2, BookmarkPlus, Clock, Plus, X, Loader2 } from "lucide-react";
 import Markdown from "@/components/markdown";
 import { PageHeader } from "@/components/app-shell/page-header";
@@ -14,10 +15,11 @@ import { suggestedPrompts, workspaceHistory, workspaceContextChips, agents } fro
 const RUNNABLE = agents.filter((a) => a.agentType);
 
 export default function AIWorkspacePage() {
+  const searchParams = useSearchParams();
   const { provider, model, setProvider, setModel } = useProviderPreference();
 
   const [agentType, setAgentType] = useState("coordinator");
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(() => searchParams.get("q")?.trim() ?? "");
   const [chips, setChips] = useState<string[]>(workspaceContextChips);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");

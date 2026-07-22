@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LogOut, Menu } from "lucide-react";
+import { LogOut, Menu, Sparkles } from "lucide-react";
 import { NAV_GROUPS } from "./nav-config";
 import { logoutAction } from "@/lib/actions/auth";
 import { ThemeToggle } from "./theme-toggle";
+import { ShellLayoutProvider } from "./shell-layout";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -43,7 +44,7 @@ export function AppShell({
   const [open, setOpen] = useState(false);
 
   return (
-    <>
+    <ShellLayoutProvider>
       <div className="mobile-bar">
         <button
           type="button"
@@ -68,9 +69,14 @@ export function AppShell({
       <div className="dashboard-grid">
         <aside id="app-sidebar" className={`sidebar${open ? " open" : ""}`} aria-label="App navigation">
           <div className="sidebar-top">
-            <div className="sidebar-brand">
-              <h2 className="text-gradient">Nexus</h2>
-              <p>{orgName}</p>
+            <div className="brand-row">
+              <span className="brand-mark" aria-hidden>
+                <Sparkles size={16} />
+              </span>
+              <div className="sidebar-brand" style={{ padding: 0 }}>
+                <h2>Nexus</h2>
+                <p>{orgName}</p>
+              </div>
             </div>
 
             <nav aria-label="Primary">
@@ -86,10 +92,16 @@ export function AppShell({
                         href={item.href}
                         className={`nav-link${active ? " active" : ""}`}
                         aria-current={active ? "page" : undefined}
+                        title={item.label}
                         onClick={() => setOpen(false)}
                       >
                         <Icon size={17} aria-hidden />
                         <span>{item.label}</span>
+                        {item.badge ? (
+                          <span className="nav-badge" aria-label={`${item.badge} pending`}>
+                            {item.badge}
+                          </span>
+                        ) : null}
                       </Link>
                     );
                   })}
@@ -118,6 +130,6 @@ export function AppShell({
 
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>{children}</div>
       </div>
-    </>
+    </ShellLayoutProvider>
   );
 }

@@ -18,9 +18,8 @@ cp .env.example .env.local   # fill in DATABASE_URL — see docs/DATABASE.md
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), open **Configure
-Engine** in the sidebar, and paste in the API key(s) for whichever
-provider(s) you want to use.
+Open [http://localhost:3000](http://localhost:3000) for the public landing page,
+or go to `/login` / `/signup` to enter a workspace.
 
 The Knowledge Base tab needs a Postgres database (with the `pgvector`
 extension) to be configured — see [`docs/DATABASE.md`](./docs/DATABASE.md).

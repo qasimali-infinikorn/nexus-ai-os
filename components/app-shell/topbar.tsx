@@ -1,112 +1,91 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { Bell, Search } from "lucide-react";
-import { ALL_NAV_ITEMS, findNavItem } from "./nav-config";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Bell, Search, PanelLeft, PanelRight } from "lucide-react";
+import { findNavItem } from "./nav-config";
 import { ThemeToggle } from "./theme-toggle";
+import { useShellLayout } from "./shell-layout";
+import { CommandPalette } from "./command-palette";
 
 export function Topbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const current = findNavItem(pathname);
-  const [query, setQuery] = useState("");
-  const [focused, setFocused] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const { sidebarCollapsed, contextPanelOpen, toggleSidebar, toggleContextPanel } =
+    useShellLayout();
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const matches = useMemo(() => {
-    if (!query.trim()) return [];
-    const lower = query.toLowerCase();
-    return ALL_NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(lower)).slice(0, 6);
-  }, [query]);
-
-  const goTo = (href: string) => {
-    setQuery("");
-    setFocused(false);
-    router.push(href);
-  };
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
-    <header className="app-topbar">
-      <div className="breadcrumb">
-        <span>Nexus</span>
-        <span aria-hidden>/</span>
-        <strong>{current?.label ?? "Workspace"}</strong>
-      </div>
+    <>
+      <header className="app-topbar">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Toggle sidebar"
+          aria-pressed={sidebarCollapsed}
+          title="Toggle sidebar"
+          onClick={toggleSidebar}
+          style={{ flexShrink: 0 }}
+        >
+          <PanelLeft size={17} aria-hidden />
+        </button>
 
-      <div style={{ position: "relative", flex: 1, display: "flex", justifyContent: "center" }}>
-        <label className="topbar-search" htmlFor="app-quick-jump">
-          <Search size={14} aria-hidden />
-          <input
-            id="app-quick-jump"
-            ref={inputRef}
-            type="text"
-            placeholder="Search or jump to…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setTimeout(() => setFocused(false), 120)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && matches[0]) goTo(matches[0].href);
-              if (e.key === "Escape") inputRef.current?.blur();
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              outline: "none",
-              color: "inherit",
-              font: "inherit",
-              width: "100%"
-            }}
+        <div className="breadcrumb">
+          <span>Nexus</span>
+          <span aria-hidden>/</span>
+          <strong>{current?.label ?? "Workspace"}</strong>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+          <button
+            type="button"
+            className="topbar-search"
+            onClick={() => setPaletteOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={paletteOpen}
             aria-label="Search or jump to a page"
-            aria-expanded={focused && matches.length > 0}
-            aria-controls="quick-jump-results"
-            role="combobox"
-            aria-autocomplete="list"
-          />
-          <kbd>⌘K</kbd>
-        </label>
-
-        {focused && matches.length > 0 ? (
-          <ul
-            id="quick-jump-results"
-            role="listbox"
-            className="panel"
-            style={{
-              position: "absolute",
-              top: "calc(100% + 6px)",
-              width: "min(360px, 100%)",
-              zIndex: 30,
-              listStyle: "none",
-              overflow: "hidden"
-            }}
           >
-            {matches.map((item) => (
-              <li key={item.href} role="option" aria-selected={false}>
-                <button
-                  type="button"
-                  className="nav-link"
-                  style={{ borderRadius: 0 }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => goTo(item.href)}
-                >
-                  <item.icon size={17} aria-hidden />
-                  <span>{item.label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+            <Search size={14} aria-hidden />
+            <span className="topbar-search-placeholder">Search or jump to…</span>
+            <kbd>⌘K</kbd>
+          </button>
+        </div>
 
-      <div className="topbar-actions">
-        <ThemeToggle />
-        <span className="icon-btn-wrap">
-          <a href="/notifications" className="icon-btn" aria-label="Notifications">
-            <Bell size={17} aria-hidden />
-          </a>
-        </span>
-      </div>
-    </header>
+        <div className="topbar-actions">
+          <ThemeToggle />
+          <span className="icon-btn-wrap">
+            <Link href="/notifications" className="icon-btn" aria-label="Notifications">
+              <Bell size={17} aria-hidden />
+            </Link>
+            <span className="icon-btn-dot" aria-hidden />
+          </span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Context panel"
+            aria-pressed={contextPanelOpen}
+            title="Context panel"
+            onClick={toggleContextPanel}
+          >
+            <PanelRight size={17} aria-hidden />
+          </button>
+        </div>
+      </header>
+
+      {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
+    </>
   );
 }

@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
+import { Avatar, Pill, DemoNotice } from "@/components/workspace/ui";
 import { listOrgProviderKeyStatus } from "@/lib/db/queries";
 import { OrgKeyRow } from "./org-key-row";
+import { integrationCatalog } from "@/lib/workspace/settings-content";
 
 const PROVIDER_LABELS: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
 
@@ -38,20 +40,35 @@ export default async function IntegrationsSettingsPage() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="card-header">
-          <div className="card-header-title">
-            <h3>Other integrations</h3>
-          </div>
+      <section className="stack-md">
+        <p className="section-label">Third-party integrations</p>
+        <DemoNotice>
+          Connection states below are demo content — no OAuth apps are registered yet. GitHub lands first, then a
+          generic bring-your-own-credentials connector for the rest.
+        </DemoNotice>
+        <div className="grid-3">
+          {integrationCatalog.map((i) => (
+            <article key={i.id} className="card card-pad stack-md">
+              <div className="row" style={{ gap: 12 }}>
+                <Avatar initials={i.initials} index={i.avatarIndex} square />
+                <div className="stack" style={{ minWidth: 0 }}>
+                  <span className="card-title">{i.name}</span>
+                  <span className="card-sub">{i.category}</span>
+                </div>
+              </div>
+              <p className="dim" style={{ fontSize: "var(--fs-body)", lineHeight: 1.55 }}>
+                {i.body}
+              </p>
+              <div className="row-between" style={{ marginTop: "auto" }}>
+                <Pill tone={i.connected ? "green" : "slate"}>{i.connected ? "Connected" : "Not connected"}</Pill>
+                <button type="button" className="btn-secondary btn-sm" disabled>
+                  {i.connected ? "Manage" : "Connect"}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
-        <div className="card-body">
-          <p className="lede" style={{ margin: 0 }}>
-            GitHub, Jira, Confluence, PagerDuty, Stripe, Google/Microsoft 365 calendars, and SSO are planned for
-            later phases — GitHub first (Code Review), then a generic bring-your-own-credentials connector for the
-            rest. None are fabricated here; this section will grow as each one lands.
-          </p>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { listOrgMembers } from "@/lib/db/queries";
+import { Pill } from "@/components/workspace/ui";
 import { InviteForm } from "./invite-form";
 
 const ROLE_LABELS: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member" };
@@ -31,7 +32,7 @@ export default async function TeamSettingsPage() {
           <div className="card-header-title">
             <h3>Members</h3>
           </div>
-          <span className="badge badge-sky">{members.length} total</span>
+          <Pill tone="blue">{members.length} total</Pill>
         </div>
         <div className="card-body">
           {members.map(({ user, membership }) => (
@@ -40,7 +41,8 @@ export default async function TeamSettingsPage() {
                 <p style={{ fontWeight: 600 }}>{user.name}</p>
                 <p className="form-hint">{user.email}</p>
               </div>
-              <span className="badge badge-sky">{ROLE_LABELS[membership.role] ?? membership.role}</span>
+              <Pill tone="slate">{ROLE_LABELS[membership.role] ?? membership.role}</Pill>
+              <Pill tone="green">Active</Pill>
             </div>
           ))}
         </div>

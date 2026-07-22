@@ -1,7 +1,9 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getInvitationByToken, acceptInvitation, getOrganizationById } from "@/lib/db/queries";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { Sparkles } from "lucide-react";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -9,15 +11,23 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
   if (!invitation || invitation.acceptedAt || invitation.expiresAt < new Date()) {
     return (
-      <div className="auth-shell">
+      <AuthShell>
         <div className="auth-card">
+          <div className="auth-card-brand">
+            <span className="auth-card-mark">
+              <Sparkles size={16} strokeWidth={2.4} aria-hidden />
+            </span>
+            <span>Nexus</span>
+          </div>
           <h1 className="auth-title">Invite not valid</h1>
-          <p className="auth-subtitle">This invitation link has expired, was already used, or doesn&rsquo;t exist.</p>
-          <Link href="/login" className="btn-primary">
-            Go to login
+          <p className="auth-subtitle">
+            This invitation link has expired, was already used, or doesn&rsquo;t exist.
+          </p>
+          <Link href="/login" className="btn-primary auth-submit">
+            Go to sign in
           </Link>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
@@ -30,22 +40,28 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const organization = await getOrganizationById(invitation.organizationId);
 
   return (
-    <div className="auth-shell">
+    <AuthShell>
       <div className="auth-card">
+        <div className="auth-card-brand">
+          <span className="auth-card-mark">
+            <Sparkles size={16} strokeWidth={2.4} aria-hidden />
+          </span>
+          <span>Nexus</span>
+        </div>
         <h1 className="auth-title">Join {organization?.name ?? "a workspace"}</h1>
         <p className="auth-subtitle">
-          You&rsquo;ve been invited as <strong>{invitation.role}</strong>. Log in or create an account with{" "}
-          <strong>{invitation.email}</strong> to accept.
+          You&rsquo;ve been invited as <strong>{invitation.role}</strong>. Sign in or create an account
+          with <strong>{invitation.email}</strong> to accept.
         </p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href={`/login?from=/invite/${token}`} className="btn-primary">
-            Log in
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Link href={`/login?from=/invite/${token}`} className="btn-primary auth-submit">
+            Sign in
           </Link>
-          <Link href={`/signup?from=/invite/${token}`} className="btn-secondary">
-            Sign up
+          <Link href={`/signup?from=/invite/${token}`} className="btn-secondary" style={{ width: "100%" }}>
+            Create account
           </Link>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }

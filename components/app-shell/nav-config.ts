@@ -20,6 +20,8 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   description: string;
+  /** Count pill shown on the right of the nav row (mockup: Code Review, Notifications). */
+  badge?: number;
 }
 
 export interface NavGroup {
@@ -54,7 +56,8 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/code-review",
         label: "Code Review",
         icon: FileCode,
-        description: "Staff-level reviews, SOLID checks, and technical debt estimates."
+        description: "Staff-level reviews, SOLID checks, and technical debt estimates.",
+        badge: 3
       },
       { href: "/devops", label: "DevOps", icon: Boxes, description: "Deployments and incidents." },
       { href: "/projects", label: "Projects", icon: FolderKanban, description: "Sprints and delivery health." }
@@ -87,7 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
-      { href: "/notifications", label: "Notifications", icon: Bell, description: "Mentions, reviews, and incidents." },
+      { href: "/notifications", label: "Notifications", icon: Bell, description: "Mentions, reviews, and incidents.", badge: 4 },
       { href: "/settings", label: "Settings", icon: Settings, description: "Profile, team, security, and integrations." }
     ]
   }

@@ -2,7 +2,7 @@
 // Thin wrappers over Drizzle so route handlers/server actions stay small —
 // see lib/db/client.ts for the getDb() lazy-connection pattern these build on.
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gte, max, sql } from "drizzle-orm";
 import { getDb } from "./client";
 import { encryptSecret, decryptSecret, generateToken } from "../crypto";
 import {
@@ -12,12 +12,21 @@ import {
   orgProviderKeys,
   invitations,
   auditLog,
+  projectTasks,
+  projects,
+  userSettings,
   type User,
   type Organization,
   type Membership,
   type MembershipRole,
-  type OrgKeyProvider
+  type OrgKeyProvider,
+  type ProjectTask,
+  type TaskStatus,
+  type Project,
+  type ProjectStatus
 } from "./schema";
+// Aliased: `projects` is the Drizzle table above; these are the seed rows.
+import { boardTaskSeeds, projects as projectSeeds } from "../workspace/content";
 
 export function slugify(input: string): string {
   const base = input
@@ -294,4 +303,348 @@ export async function writeAuditLog(entry: {
     targetId: entry.targetId,
     metadata: entry.metadata
   });
+}
+
+
+/* ── Project tasks (Kanban board) ─────────────────────────────────────── */
+
+const TASK_ORDER = [asc(projectTasks.sortOrder), asc(projectTasks.createdAt)] as const;
+
+function taskScope(organizationId: string, projectSlug: string) {
+  return and(eq(projectTasks.organizationId, organizationId), eq(projectTasks.projectSlug, projectSlug));
+}
+
+/**
+ * Lists a project's tasks, seeding the demo board the first time an
+ * organization opens it. Seeding lazily (rather than at signup) means
+ * organizations created before this feature existed also get a populated
+ * board, and `onConflictDoNothing` on the org+ref unique index keeps it
+ * idempotent if two requests race.
+ */
+export async function listProjectTasks(organizationId: string, projectSlug: string): Promise<ProjectTask[]> {
+  const db = getDb();
+  const read = () =>
+    db.select().from(projectTasks).where(taskScope(organizationId, projectSlug)).orderBy(...TASK_ORDER);
+
+  const existing = await read();
+  if (existing.length > 0 || projectSlug !== "order-platform") return existing;
+
+  await db
+    .insert(projectTasks)
+    .values(
+      boardTaskSeeds.map((t, i) => ({
+        organizationId,
+        projectSlug,
+        ref: t.ref,
+        kind: t.kind,
+        title: t.title,
+        description: t.description || null,
+        status: t.status,
+        priority: t.priority,
+        points: t.points,
+        assignee: t.assignee,
+        avatarIndex: t.avatarIndex,
+        startDay: t.startDay,
+        endDay: t.endDay,
+        sortOrder: i
+      }))
+    )
+    .onConflictDoNothing();
+
+  return read();
+}
+
+export async function getProjectTask(organizationId: string, ref: string): Promise<ProjectTask | undefined> {
+  const db = getDb();
+  const [task] = await db
+    .select()
+    .from(projectTasks)
+    .where(and(eq(projectTasks.organizationId, organizationId), eq(projectTasks.ref, ref)))
+    .limit(1);
+  return task;
+}
+
+/** Next sequential ref for a project, e.g. NX-2141 -> NX-2142. */
+async function nextTaskRef(organizationId: string, projectSlug: string, prefix: string): Promise<string> {
+  const db = getDb();
+  const rows = await db
+    .select({ ref: projectTasks.ref })
+    .from(projectTasks)
+    .where(taskScope(organizationId, projectSlug));
+  // Floor of 100 so a brand-new project starts at KEY-101; a project that
+  // already has tickets simply continues from its highest existing number.
+  const highest = rows.reduce((acc, r) => {
+    const n = Number(r.ref.split("-")[1]);
+    return Number.isFinite(n) && n > acc ? n : acc;
+  }, 100);
+  return `${prefix}-${highest + 1}`;
+}
+
+export async function createProjectTask(params: {
+  organizationId: string;
+  projectSlug: string;
+  refPrefix: string;
+  kind: ProjectTask["kind"];
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: ProjectTask["priority"];
+  points: number;
+  assignee: string;
+  avatarIndex: number;
+}): Promise<ProjectTask> {
+  const db = getDb();
+  const ref = await nextTaskRef(params.organizationId, params.projectSlug, params.refPrefix);
+  const [{ value: highestOrder }] = await db
+    .select({ value: max(projectTasks.sortOrder) })
+    .from(projectTasks)
+    .where(and(taskScope(params.organizationId, params.projectSlug), eq(projectTasks.status, params.status)));
+
+  const [task] = await db
+    .insert(projectTasks)
+    .values({
+      organizationId: params.organizationId,
+      projectSlug: params.projectSlug,
+      ref,
+      kind: params.kind,
+      title: params.title,
+      description: params.description || null,
+      status: params.status,
+      priority: params.priority,
+      points: params.points,
+      assignee: params.assignee,
+      avatarIndex: params.avatarIndex,
+      startDay: 1,
+      endDay: 2,
+      sortOrder: (highestOrder ?? -1) + 1
+    })
+    .returning();
+  return task;
+}
+
+/**
+ * Moves a task to `status`, inserting it at `position` within that column.
+ * Siblings at or after the insertion point shift down so the ordering
+ * survives a reload — the board is persisted, not just optimistic state.
+ */
+export async function moveProjectTask(params: {
+  organizationId: string;
+  ref: string;
+  status: TaskStatus;
+  position: number;
+}): Promise<ProjectTask | undefined> {
+  const db = getDb();
+  const task = await getProjectTask(params.organizationId, params.ref);
+  if (!task) return undefined;
+
+  return db.transaction(async (tx) => {
+    await tx
+      .update(projectTasks)
+      .set({ sortOrder: sql`${projectTasks.sortOrder} + 1` })
+      .where(
+        and(
+          eq(projectTasks.organizationId, params.organizationId),
+          eq(projectTasks.projectSlug, task.projectSlug),
+          eq(projectTasks.status, params.status),
+          gte(projectTasks.sortOrder, params.position)
+        )
+      );
+
+    const [updated] = await tx
+      .update(projectTasks)
+      .set({ status: params.status, sortOrder: params.position, updatedAt: new Date() })
+      .where(eq(projectTasks.id, task.id))
+      .returning();
+    return updated;
+  });
+}
+
+export async function updateProjectTask(params: {
+  organizationId: string;
+  ref: string;
+  title?: string;
+  description?: string;
+  priority?: ProjectTask["priority"];
+  points?: number;
+  status?: TaskStatus;
+  assignee?: string;
+}): Promise<ProjectTask | undefined> {
+  const { organizationId, ref, ...fields } = params;
+  const patch = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+  if (Object.keys(patch).length === 0) return getProjectTask(organizationId, ref);
+
+  const db = getDb();
+  const [updated] = await db
+    .update(projectTasks)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(projectTasks.organizationId, organizationId), eq(projectTasks.ref, ref)))
+    .returning();
+  return updated;
+}
+
+/* ── Projects ─────────────────────────────────────────────────────────── */
+
+/**
+ * Lists an organization's projects, seeding the demo portfolio the first
+ * time it is opened (same lazy pattern as listProjectTasks, so orgs created
+ * before this table existed also get populated).
+ */
+export async function listProjects(organizationId: string): Promise<Project[]> {
+  const db = getDb();
+  const read = () =>
+    db
+      .select()
+      .from(projects)
+      .where(eq(projects.organizationId, organizationId))
+      .orderBy(asc(projects.sortOrder), asc(projects.createdAt));
+
+  const existing = await read();
+  if (existing.length > 0) return existing;
+
+  await db
+    .insert(projects)
+    .values(
+      projectSeeds.map((p, i) => ({
+        organizationId,
+        slug: p.slug,
+        name: p.name,
+        key: p.key,
+        initials: p.initials,
+        avatarIndex: p.avatarIndex,
+        accent: p.accent,
+        lead: p.lead,
+        status: p.status,
+        sprintLabel: p.sprint,
+        progress: p.progress,
+        openIssues: p.openIssues,
+        engineers: p.engineers,
+        warning: p.warning ?? null,
+        sortOrder: i
+      }))
+    )
+    .onConflictDoNothing();
+
+  return read();
+}
+
+export async function getProjectBySlug(organizationId: string, slug: string): Promise<Project | undefined> {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.organizationId, organizationId), eq(projects.slug, slug)))
+    .limit(1);
+  return project;
+}
+
+/** Ensures a slug is unique within the organization by suffixing -2, -3, … */
+async function uniqueProjectSlug(organizationId: string, base: string): Promise<string> {
+  const db = getDb();
+  const rows = await db
+    .select({ slug: projects.slug })
+    .from(projects)
+    .where(eq(projects.organizationId, organizationId));
+  const taken = new Set(rows.map((r) => r.slug));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 100; i += 1) {
+    if (!taken.has(`${base}-${i}`)) return `${base}-${i}`;
+  }
+  return `${base}-${generateToken(4)}`;
+}
+
+const PROJECT_ACCENTS = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#0891b2"];
+
+export async function createProject(params: {
+  organizationId: string;
+  name: string;
+  key: string;
+  lead: string;
+  status: ProjectStatus;
+  sprintLabel: string;
+  engineers: number;
+}): Promise<Project> {
+  const db = getDb();
+  const slug = await uniqueProjectSlug(params.organizationId, slugify(params.name));
+
+  const [{ value: highestOrder }] = await db
+    .select({ value: max(projects.sortOrder) })
+    .from(projects)
+    .where(eq(projects.organizationId, params.organizationId));
+
+  const initials = params.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const avatarIndex = Math.abs([...params.key].reduce((a, c) => a + c.charCodeAt(0), 0)) % 6;
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      organizationId: params.organizationId,
+      slug,
+      name: params.name,
+      key: params.key.toUpperCase(),
+      initials: initials || "PR",
+      avatarIndex,
+      accent: PROJECT_ACCENTS[avatarIndex],
+      lead: params.lead,
+      status: params.status,
+      sprintLabel: params.sprintLabel,
+      progress: 0,
+      openIssues: 0,
+      engineers: params.engineers,
+      sortOrder: (highestOrder ?? -1) + 1
+    })
+    .returning();
+  return project;
+}
+
+/* ── User settings & workspace ────────────────────────────────────────── */
+
+export type NotificationPrefs = Record<string, { inApp: boolean; email: boolean; slack: boolean }>;
+export type AppearancePrefs = Record<string, boolean>;
+
+export async function getUserSettings(
+  userId: string,
+  organizationId: string
+): Promise<{ notificationPrefs: NotificationPrefs; appearance: AppearancePrefs }> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(userSettings)
+    .where(and(eq(userSettings.userId, userId), eq(userSettings.organizationId, organizationId)))
+    .limit(1);
+  return {
+    notificationPrefs: (row?.notificationPrefs as NotificationPrefs) ?? {},
+    appearance: (row?.appearance as AppearancePrefs) ?? {}
+  };
+}
+
+export async function saveUserSettings(params: {
+  userId: string;
+  organizationId: string;
+  notificationPrefs?: NotificationPrefs;
+  appearance?: AppearancePrefs;
+}): Promise<void> {
+  const db = getDb();
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (params.notificationPrefs) patch.notificationPrefs = params.notificationPrefs;
+  if (params.appearance) patch.appearance = params.appearance;
+
+  await db
+    .insert(userSettings)
+    .values({
+      userId: params.userId,
+      organizationId: params.organizationId,
+      notificationPrefs: params.notificationPrefs ?? {},
+      appearance: params.appearance ?? {}
+    })
+    .onConflictDoUpdate({ target: [userSettings.userId, userSettings.organizationId], set: patch });
+}
+
+export async function updateOrganizationName(organizationId: string, name: string): Promise<void> {
+  const db = getDb();
+  await db.update(organizations).set({ name }).where(eq(organizations.id, organizationId));
 }

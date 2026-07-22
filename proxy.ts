@@ -19,8 +19,10 @@ export default auth((req) => {
   // Invite links must be reachable while signed out — the page itself
   // decides whether to prompt for login/signup or accept immediately.
   const isInviteRoute = pathname.startsWith("/invite/");
+  // Marketing home is public; signed-in users are redirected by the page.
+  const isPublicMarketingRoute = pathname === "/";
 
-  if (isPublicApiAuthRoute || isInviteRoute) {
+  if (isPublicApiAuthRoute || isInviteRoute || isPublicMarketingRoute) {
     return NextResponse.next();
   }
 

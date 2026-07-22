@@ -497,10 +497,13 @@ export const requestSeries = {
 
 export interface Project {
   id: string;
+  slug: string;
   name: string;
   key: string;
   initials: string;
   avatarIndex: number;
+  /** Bar/accent color, mirroring the project's avatar tint in the mockup. */
+  accent: string;
   lead: string;
   status: "On track" | "At risk" | "Off track";
   tone: Tone;
@@ -508,17 +511,17 @@ export interface Project {
   progress: number;
   openIssues: number;
   engineers: number;
-  extra?: string;
-  extraTone?: Tone;
+  /** Red callout in the card footer (blockers / incidents). */
+  warning?: string;
 }
 
 export const projects: Project[] = [
-  { id: "p1", name: "Order Platform", key: "NX", initials: "OP", avatarIndex: 0, lead: "Alex Morgan", status: "On track", tone: "green", sprint: "Sprint 24 · day 6/10", progress: 81, openIssues: 9, engineers: 6 },
-  { id: "p2", name: "Payments Modernization", key: "PAY", initials: "PY", avatarIndex: 1, lead: "Priya Nair", status: "At risk", tone: "amber", sprint: "Sprint 12 · day 8/10", progress: 64, openIssues: 14, engineers: 5, extra: "1 blocker", extraTone: "red" },
-  { id: "p3", name: "Data Platform", key: "DATA", initials: "DP", avatarIndex: 2, lead: "Sam Okafor", status: "On track", tone: "green", sprint: "Sprint 7 · day 3/10", progress: 38, openIssues: 11, engineers: 4 },
-  { id: "p4", name: "Mobile Checkout", key: "MOB", initials: "MB", avatarIndex: 3, lead: "Dana Ruiz", status: "On track", tone: "green", sprint: "Sprint 19 · day 9/10", progress: 92, openIssues: 4, engineers: 3 },
-  { id: "p5", name: "Infra & Reliability", key: "INF", initials: "IN", avatarIndex: 4, lead: "Alex Morgan", status: "Off track", tone: "red", sprint: "Sprint 15 · day 5/10", progress: 55, openIssues: 17, engineers: 5, extra: "2 incidents", extraTone: "red" },
-  { id: "p6", name: "Developer Experience", key: "DX", initials: "DX", avatarIndex: 5, lead: "Sam Okafor", status: "On track", tone: "green", sprint: "Sprint 9 · day 2/10", progress: 24, openIssues: 7, engineers: 3 }
+  { id: "p1", slug: "order-platform", name: "Order Platform", key: "NX", initials: "OP", avatarIndex: 0, accent: "#2563eb", lead: "Alex Morgan", status: "On track", tone: "green", sprint: "Sprint 24 · day 6/10", progress: 81, openIssues: 9, engineers: 6 },
+  { id: "p2", slug: "payments-modernization", name: "Payments Modernization", key: "PAY", initials: "PY", avatarIndex: 1, accent: "#0d9488", lead: "Priya Nair", status: "At risk", tone: "amber", sprint: "Sprint 12 · day 8/10", progress: 64, openIssues: 14, engineers: 5, warning: "1 blocker" },
+  { id: "p3", slug: "data-platform", name: "Data Platform", key: "DATA", initials: "DP", avatarIndex: 2, accent: "#7c3aed", lead: "Sam Okafor", status: "On track", tone: "green", sprint: "Sprint 7 · day 3/10", progress: 38, openIssues: 11, engineers: 4 },
+  { id: "p4", slug: "mobile-checkout", name: "Mobile Checkout", key: "MOB", initials: "MB", avatarIndex: 3, accent: "#059669", lead: "Dana Ruiz", status: "On track", tone: "green", sprint: "Sprint 19 · day 9/10", progress: 92, openIssues: 4, engineers: 3 },
+  { id: "p5", slug: "infra-reliability", name: "Infra & Reliability", key: "INF", initials: "IN", avatarIndex: 4, accent: "#2563eb", lead: "Alex Morgan", status: "Off track", tone: "red", sprint: "Sprint 15 · day 5/10", progress: 55, openIssues: 17, engineers: 5, warning: "2 incidents" },
+  { id: "p6", slug: "ml-recommendations", name: "ML Recommendations", key: "REC", initials: "ML", avatarIndex: 5, accent: "#0d9488", lead: "Priya Nair", status: "On track", tone: "green", sprint: "Sprint 4 · day 2/10", progress: 19, openIssues: 8, engineers: 3 }
 ];
 
 export const projectStats = { active: 6, teams: 3, portfolioHealth: 82 };
@@ -664,4 +667,103 @@ export const preferences = [
   { id: "pf1", title: "Compact layout", body: "Denser spacing across tables and lists", on: false },
   { id: "pf2", title: "Proactive AI suggestions", body: "Let agents surface insights on the dashboard", on: true },
   { id: "pf3", title: "Weekly email digest", body: "Summary of activity every Monday morning", on: true }
+];
+
+/* ── Project detail (Kanban / List / Timeline / Roadmap) ──────────────── */
+
+// Seed rows for a new organization's Order Platform board. Once seeded they
+// live in Postgres (project_tasks) and are edited through the Kanban board.
+export interface BoardTaskSeed {
+  ref: string;
+  kind: "story" | "bug" | "task";
+  title: string;
+  description: string;
+  status: "To Do" | "In Progress" | "In Review" | "Done";
+  priority: "Critical" | "High" | "Med" | "Low";
+  points: number;
+  assignee: string;
+  avatarIndex: number;
+  startDay: number;
+  endDay: number;
+}
+
+export const boardSummary = {
+  projectSlug: "order-platform",
+  day: 6,
+  totalDays: 10,
+  committed: 42,
+  completed: 34
+};
+
+export const boardTaskSeeds: BoardTaskSeed[] = [
+  { ref: "NX-2140", kind: "story", title: "Idempotency keys for payment client", description: "", status: "In Review", priority: "High", points: 5, assignee: "PN", avatarIndex: 1, startDay: 4, endDay: 6 },
+  { ref: "NX-2141", kind: "story", title: "Event-driven inventory sync (ADR-042)", description: "", status: "To Do", priority: "High", points: 8, assignee: "SO", avatarIndex: 2, startDay: 7, endDay: 10 },
+  { ref: "NX-2138", kind: "bug", title: "Duplicate charge on retry storm", description: "", status: "In Progress", priority: "Critical", points: 3, assignee: "PN", avatarIndex: 1, startDay: 5, endDay: 6 },
+  { ref: "NX-2135", kind: "task", title: "Add circuit breaker to gateway client", description: "", status: "To Do", priority: "Med", points: 3, assignee: "DR", avatarIndex: 3, startDay: 6, endDay: 7 },
+  { ref: "NX-2130", kind: "story", title: "Checkout p95 latency budget", description: "", status: "In Progress", priority: "High", points: 5, assignee: "AM", avatarIndex: 0, startDay: 4, endDay: 6 },
+  { ref: "NX-2128", kind: "task", title: "Migrate logs to structured JSON", description: "", status: "Done", priority: "Low", points: 2, assignee: "DR", avatarIndex: 3, startDay: 2, endDay: 3 },
+  { ref: "NX-2125", kind: "story", title: "Ledger reconciliation job", description: "", status: "Done", priority: "Med", points: 5, assignee: "SO", avatarIndex: 2, startDay: 1, endDay: 3 },
+  { ref: "NX-2122", kind: "task", title: "Upgrade Kafka client to 3.7", description: "", status: "In Review", priority: "Med", points: 2, assignee: "AM", avatarIndex: 0, startDay: 5, endDay: 6 },
+  { ref: "NX-2119", kind: "bug", title: "Timezone drift in sprint report", description: "", status: "To Do", priority: "Low", points: 1, assignee: "PN", avatarIndex: 1, startDay: 8, endDay: 9 }
+];
+
+export interface RoadmapItem {
+  id: string;
+  title: string;
+  state: "On track" | "Planned" | "At risk" | "Done" | "Backlog";
+  tone: Tone;
+  progress: number;
+}
+
+export interface RoadmapQuarter {
+  id: string;
+  quarter: string;
+  theme: string;
+  accent: string;
+  items: RoadmapItem[];
+}
+
+export const roadmap: RoadmapQuarter[] = [
+  {
+    id: "q3-2026",
+    quarter: "Q3 2026",
+    theme: "Foundation & reliability",
+    accent: "#2563eb",
+    items: [
+      { id: "r1", title: "Payment idempotency & retries", state: "On track", tone: "green", progress: 72 },
+      { id: "r2", title: "Checkout latency budget", state: "On track", tone: "green", progress: 64 },
+      { id: "r3", title: "Structured logging rollout", state: "Done", tone: "green", progress: 100 }
+    ]
+  },
+  {
+    id: "q4-2026",
+    quarter: "Q4 2026",
+    theme: "Event-driven platform",
+    accent: "#7c3aed",
+    items: [
+      { id: "r4", title: "Event-driven inventory sync", state: "Planned", tone: "blue", progress: 22 },
+      { id: "r5", title: "Kafka DR & MirrorMaker", state: "Planned", tone: "blue", progress: 14 },
+      { id: "r6", title: "Circuit breakers everywhere", state: "At risk", tone: "amber", progress: 10 }
+    ]
+  },
+  {
+    id: "q1-2027",
+    quarter: "Q1 2027",
+    theme: "Scale & cost",
+    accent: "#059669",
+    items: [
+      { id: "r7", title: "Node pool right-sizing", state: "Backlog", tone: "slate", progress: 0 },
+      { id: "r8", title: "Multi-region read replicas", state: "Backlog", tone: "slate", progress: 0 }
+    ]
+  },
+  {
+    id: "q2-2027",
+    quarter: "Q2 2027",
+    theme: "Developer experience",
+    accent: "#94a3b8",
+    items: [
+      { id: "r9", title: "Self-service ephemeral envs", state: "Backlog", tone: "slate", progress: 0 },
+      { id: "r10", title: "Golden-path service scaffolds", state: "Backlog", tone: "slate", progress: 0 }
+    ]
+  }
 ];

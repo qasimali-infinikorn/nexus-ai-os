@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hashPassword, verifyPassword } from "@/lib/crypto";
 import {
+  saveUserSettings,
+  updateOrganizationName,
   updateUserName,
   updateUserPasswordHash,
   getUserById,
@@ -166,4 +168,76 @@ export async function deleteOrgKeyAction(_prevState: FormState, formData: FormDa
 
   revalidatePath("/settings/integrations");
   return { success: `${parsed.data} key removed.` };
+}
+
+/* ── Notification preferences & workspace ─────────────────────────────── */
+
+const prefsSchema = z.record(
+  z.string().max(40),
+  z.object({ inApp: z.boolean(), email: z.boolean(), slack: z.boolean() })
+);
+
+export async function saveNotificationPrefsAction(
+  _prev: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await requireSession();
+  const raw = formData.get("prefs");
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(typeof raw === "string" ? raw : "{}");
+  } catch {
+    return { error: "Could not read those preferences." };
+  }
+  const parsed = prefsSchema.safeParse(parsedJson);
+  if (!parsed.success) return { error: "Invalid preferences." };
+
+  await saveUserSettings({
+    userId: session.user.id,
+    organizationId: session.organizationId,
+    notificationPrefs: parsed.data
+  });
+  revalidatePath("/settings/notifications");
+  return { success: "Notification preferences saved." };
+}
+
+const workspaceSchema = z.object({
+  name: z.string().trim().min(2, "Workspace name must be at least 2 characters.").max(80)
+});
+
+export async function updateWorkspaceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const session = await requireSession();
+  requireAdmin(session.role);
+
+  const parsed = workspaceSchema.safeParse({ name: formData.get("name") });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+
+  await updateOrganizationName(session.organizationId, parsed.data.name);
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "organization.renamed",
+    targetType: "organization",
+    metadata: { name: parsed.data.name }
+  });
+
+  // The org name is rendered in the sidebar from the layout, so refresh the
+  // whole app shell rather than just this page.
+  revalidatePath("/", "layout");
+  return { success: "Workspace updated. Sign out and back in to refresh the sidebar name." };
+}
+
+export async function saveAppearanceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const session = await requireSession();
+  const appearance = {
+    reduceMotion: formData.get("reduceMotion") === "on",
+    comfortableDensity: formData.get("comfortableDensity") === "on"
+  };
+  await saveUserSettings({
+    userId: session.user.id,
+    organizationId: session.organizationId,
+    appearance
+  });
+  revalidatePath("/settings/workspace");
+  return { success: "Appearance saved." };
 }
