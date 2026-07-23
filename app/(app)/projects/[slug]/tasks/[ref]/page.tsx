@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronRight, Calendar, Hash } from "lucide-react";
+import { ChevronRight, Calendar, Hash, ExternalLink } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getProjectTask, getProjectBySlug } from "@/lib/db/queries";
 import { Card, CardHead, Pill, Avatar } from "@/components/workspace/ui";
@@ -93,6 +93,31 @@ export default async function TaskDetailPage({
                 <span className="dim" style={{ flex: 1 }}>Updated</span>
                 <span className="muted">{new Date(task.updatedAt).toLocaleDateString()}</span>
               </div>
+              {task.source !== "manual" ? (
+                <div className="list-row">
+                  <span className="dim" style={{ flex: 1 }}>Source</span>
+                  <span className="strong" style={{ textTransform: "capitalize" }}>
+                    {task.source}
+                  </span>
+                </div>
+              ) : null}
+              {task.externalUrl ? (
+                <div className="list-row">
+                  <span className="dim" style={{ flex: 1 }}>External</span>
+                  <a
+                    href={task.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="row"
+                    style={{ gap: 6 }}
+                  >
+                    <ExternalLink size={13} aria-hidden />
+                    <span className="strong">
+                      Open in {task.source === "jira" ? "Jira" : "GitHub"}
+                    </span>
+                  </a>
+                </div>
+              ) : null}
             </div>
           </Card>
 

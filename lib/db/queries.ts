@@ -25,6 +25,7 @@ import {
   type OrganizationStatus,
   type ProjectTask,
   type TaskStatus,
+  type TaskSource,
   type Project,
   type ProjectStatus,
   type AuditLogEntry,
@@ -668,6 +669,99 @@ export async function getProjectTask(organizationId: string, ref: string): Promi
     .from(projectTasks)
     .where(and(eq(projectTasks.organizationId, organizationId), eq(projectTasks.ref, ref)))
     .limit(1);
+  return task;
+}
+
+export async function getProjectTaskByExternalId(
+  organizationId: string,
+  externalId: string
+): Promise<ProjectTask | undefined> {
+  const db = getDb();
+  const [task] = await db
+    .select()
+    .from(projectTasks)
+    .where(
+      and(eq(projectTasks.organizationId, organizationId), eq(projectTasks.externalId, externalId))
+    )
+    .limit(1);
+  return task;
+}
+
+/**
+ * Create or update a board task from an external tracker (Jira / GitHub).
+ * Idempotent on `(organizationId, externalId)`.
+ */
+export async function upsertExternalProjectTask(params: {
+  organizationId: string;
+  projectSlug: string;
+  source: TaskSource;
+  externalId: string;
+  externalUrl?: string | null;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  kind?: ProjectTask["kind"];
+  priority?: ProjectTask["priority"];
+  preferredRef?: string;
+}): Promise<ProjectTask> {
+  const existing = await getProjectTaskByExternalId(params.organizationId, params.externalId);
+  if (existing) {
+    const db = getDb();
+    const [updated] = await db
+      .update(projectTasks)
+      .set({
+        title: params.title.slice(0, 200),
+        description: params.description?.slice(0, 5000) ?? existing.description,
+        status: params.status,
+        externalUrl: params.externalUrl ?? existing.externalUrl,
+        kind: params.kind ?? existing.kind,
+        priority: params.priority ?? existing.priority,
+        updatedAt: new Date()
+      })
+      .where(eq(projectTasks.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  const db = getDb();
+  const preferred = params.preferredRef?.trim();
+  let ref = preferred && preferred.length > 0 ? preferred.slice(0, 40) : "";
+  if (ref) {
+    const clash = await getProjectTask(params.organizationId, ref);
+    if (clash) ref = "";
+  }
+  if (!ref) {
+    const prefix = (params.preferredRef?.split("-")[0] || params.projectSlug.slice(0, 3) || "NX").toUpperCase();
+    ref = await nextTaskRef(params.organizationId, params.projectSlug, prefix.replace(/[^A-Z0-9]/g, "") || "NX");
+  }
+
+  const [{ value: highestOrder }] = await db
+    .select({ value: max(projectTasks.sortOrder) })
+    .from(projectTasks)
+    .where(and(taskScope(params.organizationId, params.projectSlug), eq(projectTasks.status, params.status)));
+
+  const [task] = await db
+    .insert(projectTasks)
+    .values({
+      organizationId: params.organizationId,
+      projectSlug: params.projectSlug,
+      ref,
+      kind: params.kind ?? "task",
+      title: params.title.slice(0, 200),
+      description: params.description?.slice(0, 5000) ?? null,
+      status: params.status,
+      priority: params.priority ?? "Med",
+      points: 1,
+      assignee: "—",
+      avatarIndex: 0,
+      startDay: 1,
+      endDay: 2,
+      sortOrder: (highestOrder ?? -1) + 1,
+      source: params.source,
+      externalId: params.externalId,
+      externalUrl: params.externalUrl ?? null
+    })
+    .returning();
   return task;
 }
 

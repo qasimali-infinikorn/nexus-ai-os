@@ -2,7 +2,7 @@
 
 import { useOptimistic, useState, useTransition, useRef } from "react";
 import Link from "next/link";
-import { Plus, GripVertical } from "lucide-react";
+import { Plus, GripVertical, ExternalLink } from "lucide-react";
 import { Pill, Avatar } from "@/components/workspace/ui";
 import { PRIORITY_TONE, KIND_TONE, STATUS_BAR, STATUS_ORDER } from "@/lib/workspace/task-ui";
 import { moveTaskAction } from "@/lib/actions/projects";
@@ -155,6 +155,11 @@ export function KanbanBoard({ projectSlug, tasks }: Props) {
                           <span className="mono muted" style={{ fontSize: "var(--fs-sm)" }}>
                             {t.ref}
                           </span>
+                          {t.source !== "manual" ? (
+                            <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>
+                              {t.source}
+                            </span>
+                          ) : null}
                         </span>
                         <GripVertical size={14} aria-hidden className="grip" />
                       </div>
@@ -166,6 +171,20 @@ export function KanbanBoard({ projectSlug, tasks }: Props) {
                       >
                         {t.title}
                       </Link>
+
+                      {t.externalUrl ? (
+                        <a
+                          href={t.externalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="row muted"
+                          style={{ gap: 6, fontSize: "var(--fs-sm)", width: "fit-content" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink size={12} aria-hidden />
+                          Open in {t.source === "jira" ? "Jira" : "GitHub"}
+                        </a>
+                      ) : null}
 
                       <div className="row-between">
                         <span className="row" style={{ gap: 8 }}>

@@ -294,6 +294,9 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type TaskKind = (typeof TASK_KINDS)[number];
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
+export const TASK_SOURCES = ["manual", "jira", "github"] as const;
+export type TaskSource = (typeof TASK_SOURCES)[number];
+
 export const projectTasks = pgTable(
   "project_tasks",
   {
@@ -317,11 +320,17 @@ export const projectTasks = pgTable(
     endDay: integer("end_day").notNull().default(1),
     // Position within its status column; gaps are fine, only order matters.
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Origin of the task — webhook sync vs manual board create. */
+    source: text("source", { enum: TASK_SOURCES }).notNull().default("manual"),
+    /** Provider-native id, e.g. Jira `PROJ-12` or GitHub `owner/repo#42`. */
+    externalId: text("external_id"),
+    externalUrl: text("external_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
     uniqueIndex("project_tasks_org_ref_unique_idx").on(table.organizationId, table.ref),
+    uniqueIndex("project_tasks_org_external_unique_idx").on(table.organizationId, table.externalId),
     index("project_tasks_org_project_idx").on(table.organizationId, table.projectSlug)
   ]
 );

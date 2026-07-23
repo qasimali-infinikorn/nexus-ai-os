@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetRateLimiterForTests } from "@/lib/rate-limit";
 import { githubEventToNotification } from "@/lib/webhooks/github";
 import { jiraEventToNotification } from "@/lib/webhooks/jira";
-import { verifyHmacSha256 } from "@/lib/webhooks/auth";
+import { githubEventToTaskDraft } from "@/lib/webhooks/github-tasks";
+import { jiraEventToTaskDraft, mapJiraStatusForTests } from "@/lib/webhooks/jira-tasks";
+import { verifyHmacSha256, parseProjectSlug } from "@/lib/webhooks/auth";
 
 vi.mock("@/lib/db/workspace", () => ({
   createNotification: vi.fn(async () => ({ id: "n-review-1" }))
@@ -12,7 +14,15 @@ vi.mock("@/lib/db/workspace", () => ({
 vi.mock("@/lib/db/queries", () => ({
   getOrganizationById: vi.fn(async (id: string) =>
     id === "00000000-0000-4000-8000-000000000001" ? { id, name: "Acme" } : undefined
-  )
+  ),
+  getProjectBySlug: vi.fn(async (_orgId: string, slug: string) =>
+    slug === "nexus" ? { id: "proj-1", slug, name: "Nexus" } : undefined
+  ),
+  upsertExternalProjectTask: vi.fn(async (params: { preferredRef?: string; externalId: string }) => ({
+    id: "task-ext-1",
+    ref: params.preferredRef ?? "NX-101",
+    externalId: params.externalId
+  }))
 }));
 
 describe("githubEventToNotification", () => {
@@ -70,6 +80,87 @@ describe("jiraEventToNotification", () => {
   });
 });
 
+describe("jiraEventToTaskDraft", () => {
+  it("maps issue create/update and skips comments", () => {
+    expect(mapJiraStatusForTests("Code Review")).toBe("In Review");
+    expect(mapJiraStatusForTests("Done")).toBe("Done");
+
+    const draft = jiraEventToTaskDraft({
+      webhookEvent: "jira:issue_updated",
+      issue: {
+        key: "PAY-42",
+        fields: {
+          summary: "Charge retries",
+          status: { name: "In Progress" },
+          priority: { name: "High" },
+          issuetype: { name: "Bug" }
+        }
+      }
+    });
+    expect(draft).toMatchObject({
+      externalId: "jira:PAY-42",
+      preferredRef: "PAY-42",
+      status: "In Progress",
+      kind: "bug",
+      priority: "High"
+    });
+
+    expect(
+      jiraEventToTaskDraft({
+        webhookEvent: "comment_created",
+        comment: { body: "hi" },
+        issue: { key: "PAY-42", fields: { summary: "x" } }
+      })
+    ).toBeNull();
+  });
+});
+
+describe("githubEventToTaskDraft", () => {
+  it("maps issues and skips PRs", () => {
+    const draft = githubEventToTaskDraft({
+      event: "issues",
+      payload: {
+        action: "opened",
+        issue: {
+          number: 7,
+          title: "Flaky webhook",
+          body: "repro",
+          state: "open",
+          html_url: "https://github.com/acme/app/issues/7",
+          labels: [{ name: "bug" }, { name: "in progress" }]
+        },
+        repository: { full_name: "acme/app" }
+      }
+    });
+    expect(draft).toMatchObject({
+      externalId: "github:acme/app#7",
+      status: "In Progress",
+      kind: "bug",
+      title: "Flaky webhook"
+    });
+
+    expect(
+      githubEventToTaskDraft({
+        event: "issues",
+        payload: {
+          action: "opened",
+          pull_request: {},
+          issue: { number: 1, title: "PR", state: "open" },
+          repository: { full_name: "acme/app" }
+        }
+      })
+    ).toBeNull();
+  });
+});
+
+describe("parseProjectSlug", () => {
+  it("accepts valid slugs", () => {
+    const req = new Request("http://localhost/api/webhooks/jira?projectSlug=nexus-core");
+    expect(parseProjectSlug(req)).toBe("nexus-core");
+    expect(parseProjectSlug(new Request("http://localhost/api/webhooks/jira"))).toBeNull();
+  });
+});
+
 describe("verifyHmacSha256", () => {
   it("accepts a valid GitHub signature", () => {
     const body = '{"zen":"ok"}';
@@ -113,6 +204,46 @@ describe("POST /api/webhooks/github", () => {
     expect(res.status).toBe(200);
     expect(createNotification).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "Reviews", prefsEvent: "pr_reviews" })
+    );
+  });
+
+  it("upserts a Kanban task when projectSlug is set on issues", async () => {
+    const { POST } = await import("@/app/api/webhooks/github/route");
+    const { upsertExternalProjectTask } = await import("@/lib/db/queries");
+    const body = JSON.stringify({
+      action: "opened",
+      issue: {
+        number: 9,
+        title: "Board sync",
+        state: "open",
+        html_url: "https://github.com/acme/app/issues/9",
+        labels: []
+      },
+      repository: { full_name: "acme/app" }
+    });
+    const sig = `sha256=${createHmac("sha256", "github-secret").update(body).digest("hex")}`;
+    const req = new Request(
+      `http://localhost/api/webhooks/github?organizationId=${orgId}&projectSlug=nexus`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sig,
+          "x-github-event": "issues"
+        },
+        body
+      }
+    );
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { taskId: string };
+    expect(json.taskId).toBe("task-ext-1");
+    expect(upsertExternalProjectTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "github",
+        externalId: "github:acme/app#9",
+        projectSlug: "nexus"
+      })
     );
   });
 
@@ -162,5 +293,63 @@ describe("POST /api/webhooks/jira", () => {
     expect(createNotification).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "Mentions", prefsEvent: "mentions" })
     );
+  });
+
+  it("upserts a Kanban task when projectSlug is set", async () => {
+    const { POST } = await import("@/app/api/webhooks/jira/route");
+    const { upsertExternalProjectTask } = await import("@/lib/db/queries");
+    const req = new Request(
+      `http://localhost/api/webhooks/jira?organizationId=${orgId}&projectSlug=nexus`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer jira-secret"
+        },
+        body: JSON.stringify({
+          webhookEvent: "jira:issue_created",
+          issue: {
+            key: "NX-99",
+            fields: {
+              summary: "Sync me",
+              status: { name: "To Do" },
+              priority: { name: "Medium" },
+              issuetype: { name: "Task" }
+            }
+          }
+        })
+      }
+    );
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { taskId: string };
+    expect(json.taskId).toBe("task-ext-1");
+    expect(upsertExternalProjectTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "jira",
+        externalId: "jira:NX-99",
+        preferredRef: "NX-99"
+      })
+    );
+  });
+
+  it("returns 404 for unknown projectSlug", async () => {
+    const { POST } = await import("@/app/api/webhooks/jira/route");
+    const req = new Request(
+      `http://localhost/api/webhooks/jira?organizationId=${orgId}&projectSlug=missing`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer jira-secret"
+        },
+        body: JSON.stringify({
+          webhookEvent: "jira:issue_created",
+          issue: { key: "NX-1", fields: { summary: "x" } }
+        })
+      }
+    );
+    const res = await POST(req as never);
+    expect(res.status).toBe(404);
   });
 });

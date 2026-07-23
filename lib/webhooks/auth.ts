@@ -53,6 +53,18 @@ export function parseOrganizationId(req: NextRequest | Request): string | null {
   return null;
 }
 
+/** Optional Kanban target for one-way issue → task sync. */
+export function parseProjectSlug(req: NextRequest | Request): string | null {
+  try {
+    const url = "nextUrl" in req && req.nextUrl ? req.nextUrl : new URL(req.url);
+    const slug = url.searchParams.get("projectSlug")?.trim();
+    if (slug && /^[a-z0-9][a-z0-9-]{0,62}$/i.test(slug)) return slug;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function enforceWebhookRateLimit(req: Request, bucket: string) {
   return rateLimit(`webhook:${bucket}:${getClientKey(req)}`, 60, 60_000);
 }

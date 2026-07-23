@@ -59,23 +59,34 @@ Successful incident (and failed deploy) events also create inbox notifications.
 ## `POST /api/webhooks/github`
 
 GitHub App / repository webhook for PR activity → **Reviews** / **Mentions**
-notifications.
+notifications, plus optional one-way Issues → Kanban upsert.
 
 - URL must include `?organizationId=<uuid>`
+- Optional `&projectSlug=<slug>` — when set, `issues` events upsert a
+  `project_tasks` row (`source=github`, `external_id=github:owner/repo#n`).
+  Unknown slug → `404`. Without `projectSlug`, behavior is notifications-only.
 - Auth: `X-Hub-Signature-256` HMAC-SHA256 of the raw body using
   `GITHUB_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
-- Handled events: `pull_request` (opened / review_requested / closed),
+- Notification events: `pull_request` (opened / review_requested / closed),
   `pull_request_review` (submitted), PR/issue comments (`created`)
+- Task sync events: `issues` (`opened` / `edited` / `reopened` / `closed` /
+  `labeled` / `unlabeled` / `assigned`) — PRs are skipped
 - `ping` is acknowledged with `{ ok: true, ignored: true }`
+- Success body includes `notificationId` and/or `taskId` when applicable
 
 ## `POST /api/webhooks/jira`
 
-Atlassian Jira webhook → **Reviews** (issue updates) / **Mentions** (comments).
+Atlassian Jira webhook → **Reviews** (issue updates) / **Mentions** (comments),
+plus optional one-way issue → Kanban upsert.
 
 - URL must include `?organizationId=<uuid>`
+- Optional `&projectSlug=<slug>` — when set, issue create/update upserts a
+  `project_tasks` row (`source=jira`, `external_id=jira:KEY`). Comments stay
+  notification-only. Unknown slug → `404`.
 - Auth: `Authorization: Bearer …` or `x-nexus-webhook-secret` using
   `JIRA_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
 - Optional `JIRA_BASE_URL` for browse links (`{base}/browse/KEY`)
+- Success body includes `notificationId` and/or `taskId` when applicable
 
 ## `POST /api/webhooks/stripe`
 

@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createNotification } from "@/lib/db/workspace";
-import { getOrganizationById } from "@/lib/db/queries";
+import {
+  getOrganizationById,
+  getProjectBySlug,
+  upsertExternalProjectTask
+} from "@/lib/db/queries";
 import {
   bearerOrHeaderSecret,
   enforceWebhookRateLimit,
   parseOrganizationId,
+  parseProjectSlug,
   resolveWebhookSecret,
   secretsEqual
 } from "@/lib/webhooks/auth";
 import { jiraEventToNotification } from "@/lib/webhooks/jira";
+import { jiraEventToTaskDraft } from "@/lib/webhooks/jira-tasks";
 
 export const runtime = "nodejs";
 
 /**
- * Jira webhook ingest → Reviews / Mentions notifications.
+ * Jira webhook ingest → Reviews / Mentions notifications, and optional
+ * one-way Kanban upsert when `projectSlug` is present.
  *
- * URL: `/api/webhooks/jira?organizationId=<uuid>`
+ * URL: `/api/webhooks/jira?organizationId=<uuid>&projectSlug=<slug>`
  * Auth: `Authorization: Bearer …` or `x-nexus-webhook-secret` using
  * `JIRA_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`).
  */
@@ -61,21 +68,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
   }
 
-  const draft = jiraEventToNotification(payload);
-  if (!draft) {
+  const projectSlug = parseProjectSlug(req);
+  let taskId: string | null = null;
+  if (projectSlug) {
+    const project = await getProjectBySlug(organizationId, projectSlug);
+    if (!project) {
+      return NextResponse.json(
+        { error: `Unknown projectSlug "${projectSlug}" for this organization.` },
+        { status: 404 }
+      );
+    }
+    const draft = jiraEventToTaskDraft(payload);
+    if (draft) {
+      const task = await upsertExternalProjectTask({
+        organizationId,
+        projectSlug,
+        source: "jira",
+        externalId: draft.externalId,
+        externalUrl: draft.externalUrl,
+        title: draft.title,
+        description: draft.description,
+        status: draft.status,
+        kind: draft.kind,
+        priority: draft.priority,
+        preferredRef: draft.preferredRef
+      });
+      taskId = task.id;
+    }
+  }
+
+  const notifDraft = jiraEventToNotification(payload);
+  if (!notifDraft && !taskId) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const notification = await createNotification({
-    organizationId,
-    kind: draft.kind,
-    title: draft.title,
-    body: draft.body,
-    href: draft.href,
-    tone: draft.tone,
-    badge: draft.badge,
-    prefsEvent: draft.prefsEvent
-  });
+  let notificationId: string | null = null;
+  if (notifDraft) {
+    const notification = await createNotification({
+      organizationId,
+      kind: notifDraft.kind,
+      title: notifDraft.title,
+      body: notifDraft.body,
+      href: notifDraft.href,
+      tone: notifDraft.tone,
+      badge: notifDraft.badge,
+      prefsEvent: notifDraft.prefsEvent
+    });
+    notificationId = notification?.id ?? null;
+  }
 
-  return NextResponse.json({ ok: true, notificationId: notification?.id ?? null });
+  return NextResponse.json({ ok: true, notificationId, taskId });
 }

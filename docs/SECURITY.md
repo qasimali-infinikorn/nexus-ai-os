@@ -132,8 +132,8 @@ Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 | Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user |
 | Rate limit | `POST /api/webhooks/devops` | 60 req/min per client IP |
 | Webhook auth | `POST /api/webhooks/devops` | `WEBHOOK_SECRET` via Bearer or `x-nexus-webhook-secret` (timing-safe) |
-| Webhook auth | `POST /api/webhooks/github` | `X-Hub-Signature-256` + `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`) |
-| Webhook auth | `POST /api/webhooks/jira` | Bearer / header + `JIRA_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`) |
+| Webhook auth | `POST /api/webhooks/github` | `X-Hub-Signature-256` + `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`); optional `projectSlug` upserts Issues → Kanban |
+| Webhook auth | `POST /api/webhooks/jira` | Bearer / header + `JIRA_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`); optional `projectSlug` upserts Issues → Kanban |
 | Webhook auth | `POST /api/webhooks/stripe` | `Stripe-Signature` + `STRIPE_WEBHOOK_SECRET` (timing-safe HMAC) |
 | Rate limit | `POST /api/webhooks/stripe` | 60 req/min per client IP |
 | Rate limit | `loginAction` (failed attempts) | 20 / 15 min per IP · 10 / 15 min per email |
