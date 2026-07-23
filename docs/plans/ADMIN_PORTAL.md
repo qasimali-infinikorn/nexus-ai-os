@@ -102,7 +102,9 @@ Mockup seed flags (parity with design):
 
 ### 5.1 Overview
 
-- **KPIs** (4): e.g. Platform MRR, Active tenants, Agent runs (7d), Open incidents
+- **KPIs** (4): Platform MRR (Stripe or empty), Active tenants, Agent runs (7d from `agent_runs`), Open incidents
+- Charts: paid invoice volume / plan mix; runs-by-agent (7d) when ledger has data
+- Honest empty states — never invent MRR or run counts
 - **Chart**: Platform MRR trailing 12 months (area) — can start with server-aggregated demo series, then real billing events
 - **Plan mix**: donut/segments Enterprise / Business / Team
 - Empty/error: honest empty if no orgs; never invent production $ without a source
@@ -211,8 +213,8 @@ Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
 - ~~Stripe invoice sync / real MRR~~ **done** (`/api/webhooks/stripe`, tenant Stripe link, live Billing KPIs)
 - ~~Per-tenant flag override UI on tenant detail~~ **done** (`/admin/tenants/[orgId]`)
 - ~~Manual incident banners / on-call workflow~~ **done** (banners + resolve on `/admin/status`; full on-call paging still later)
+- ~~Agent-run ledger for Overview “Agent runs (7d)”~~ **done** (`agent_runs` + `getPlatformAgentRunStats`)
 - Impersonation (explicitly deferred)
-- Optional: agent-run ledger for Overview “Agent runs (7d)”
 
 ## 8. Out of scope (explicit)
 

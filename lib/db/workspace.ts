@@ -416,6 +416,46 @@ export async function getAgentRunStats(organizationId: string): Promise<{
   };
 }
 
+/** Platform-wide agent-run ledger rollup for Superadmin Overview. */
+export async function getPlatformAgentRunStats(): Promise<{
+  runs7d: number;
+  succeeded7d: number;
+  failed7d: number;
+  totalRuns: number;
+  byAgent7d: { agentType: string; count: number }[];
+}> {
+  const db = getDb();
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [totals] = await db
+    .select({
+      totalRuns: sql<number>`count(*)::int`,
+      runs7d: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${weekAgo})::int`,
+      succeeded7d: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${weekAgo} and ${agentRuns.status} = 'succeeded')::int`,
+      failed7d: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${weekAgo} and ${agentRuns.status} = 'failed')::int`
+    })
+    .from(agentRuns);
+
+  const byAgent7d = await db
+    .select({
+      agentType: agentRuns.agentType,
+      count: sql<number>`count(*)::int`
+    })
+    .from(agentRuns)
+    .where(gte(agentRuns.createdAt, weekAgo))
+    .groupBy(agentRuns.agentType)
+    .orderBy(desc(sql`count(*)`))
+    .limit(8);
+
+  return {
+    totalRuns: totals?.totalRuns ?? 0,
+    runs7d: totals?.runs7d ?? 0,
+    succeeded7d: totals?.succeeded7d ?? 0,
+    failed7d: totals?.failed7d ?? 0,
+    byAgent7d
+  };
+}
+
 /* ── DevOps ──────────────────────────────────────────────────────────── */
 
 export async function listDeployments(organizationId: string, limit = 20): Promise<Deployment[]> {

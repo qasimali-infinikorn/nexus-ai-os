@@ -10,6 +10,7 @@ import {
   finishAgentRun,
   getDashboardStats,
   getAgentRunStats,
+  getPlatformAgentRunStats,
   listNotificationsForUser,
   markAllNotificationsRead,
   countOpenIncidents
@@ -153,6 +154,11 @@ describe("Phase 2 workspace data", () => {
     expect(dash.meetingsToday).toBe(1);
     expect(dash.openIncidents).toBe(1);
     expect(dash.agentRuns7d).toBe(1);
+
+    const platform = await getPlatformAgentRunStats();
+    expect(platform.runs7d).toBeGreaterThanOrEqual(1);
+    expect(platform.succeeded7d).toBeGreaterThanOrEqual(1);
+    expect(platform.byAgent7d.some((r) => r.agentType === "eng_lead")).toBe(true);
   });
 
   it("records deployments and open incident counts", async () => {

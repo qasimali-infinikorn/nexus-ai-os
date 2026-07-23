@@ -3,6 +3,7 @@ import { Building2, AlertTriangle, Bot, DollarSign } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth/require-platform-admin";
 import { getPlatformOverviewStats } from "@/lib/db/queries";
 import { formatUsdCents, getPlatformBillingStats } from "@/lib/db/billing";
+import { getPlatformAgentRunStats } from "@/lib/db/workspace";
 import { runPlatformHealthChecks } from "@/lib/platform/health";
 import { Card, CardHead, DemoNotice, Pill } from "@/components/workspace/ui";
 import { AreaChart, Donut } from "@/components/workspace/charts";
@@ -17,10 +18,11 @@ const PLAN_COLORS: Record<string, string> = {
 
 export default async function AdminOverviewPage() {
   await requirePlatformAdmin();
-  const [stats, health, billing] = await Promise.all([
+  const [stats, health, billing, agentRuns] = await Promise.all([
     getPlatformOverviewStats(),
     runPlatformHealthChecks(),
-    getPlatformBillingStats()
+    getPlatformBillingStats(),
+    getPlatformAgentRunStats()
   ]);
   const planTotal = stats.planMix.reduce((sum, row) => sum + row.count, 0) || 1;
   const donutSegments = stats.planMix.map((row) => ({
@@ -34,15 +36,15 @@ export default async function AdminOverviewPage() {
   const chartLabels = billing.hasBillingData
     ? billing.mrrSeries.map((p) => p.label)
     : ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+  const agentMixTotal = agentRuns.byAgent7d.reduce((sum, row) => sum + row.count, 0) || 1;
 
   return (
     <div className="stack-lg">
       <DemoNotice>
-        Tenant counts and system health are live.
+        Tenant counts, agent-run ledger, and system health are live.
         {billing.hasBillingData
           ? " Platform MRR reflects synced Stripe subscription MRR."
-          : " Platform MRR stays empty until Stripe webhook sync — never invented."}{" "}
-        Agent runs stay empty until a run ledger exists.
+          : " Platform MRR stays empty until Stripe webhook sync — never invented."}
       </DemoNotice>
 
       <div className="grid-4 admin-kpi-row">
@@ -79,9 +81,13 @@ export default async function AdminOverviewPage() {
             </span>
             <Bot size={16} className="dim" aria-hidden />
           </div>
-          <p className="stat-value">—</p>
+          <p className="stat-value">{agentRuns.runs7d}</p>
           <p className="dim" style={{ fontSize: "0.8rem" }}>
-            No run ledger yet
+            {agentRuns.runs7d === 0
+              ? agentRuns.totalRuns === 0
+                ? "No runs recorded yet"
+                : "None in the last 7 days"
+              : `${agentRuns.succeeded7d} ok · ${agentRuns.failed7d} failed`}
           </p>
         </div>
 
@@ -192,35 +198,75 @@ export default async function AdminOverviewPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHead title="Tenant health" sub="Status breakdown from organizations.status" />
-        <div className="admin-health-grid admin-health-grid-wide">
-          <div>
-            <Pill tone="green">Active</Pill>
-            <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
-              {stats.activeCount}
-            </p>
+      <div className="grid-2">
+        <Card>
+          <CardHead title="Tenant health" sub="Status breakdown from organizations.status" />
+          <div className="admin-health-grid admin-health-grid-wide">
+            <div>
+              <Pill tone="green">Active</Pill>
+              <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
+                {stats.activeCount}
+              </p>
+            </div>
+            <div>
+              <Pill tone="amber">Trial</Pill>
+              <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
+                {stats.trialCount}
+              </p>
+            </div>
+            <div>
+              <Pill tone="red">Past due</Pill>
+              <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
+                {stats.pastDueCount}
+              </p>
+            </div>
+            <div>
+              <Pill tone="slate">Suspended</Pill>
+              <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
+                {stats.suspendedCount}
+              </p>
+            </div>
           </div>
-          <div>
-            <Pill tone="amber">Trial</Pill>
-            <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
-              {stats.trialCount}
+        </Card>
+
+        <Card>
+          <CardHead
+            title="Runs by agent (7d)"
+            sub="From agent_runs written by /api/orchestrate"
+          />
+          {agentRuns.byAgent7d.length === 0 ? (
+            <p className="dim" style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>
+              No agent runs in the last 7 days.
             </p>
-          </div>
-          <div>
-            <Pill tone="red">Past due</Pill>
-            <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
-              {stats.pastDueCount}
-            </p>
-          </div>
-          <div>
-            <Pill tone="slate">Suspended</Pill>
-            <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: 8 }}>
-              {stats.suspendedCount}
-            </p>
-          </div>
-        </div>
-      </Card>
+          ) : (
+            <ul className="admin-plan-list">
+              {agentRuns.byAgent7d.map((row) => {
+                const pct = Math.round((row.count / agentMixTotal) * 100);
+                return (
+                  <li key={row.agentType}>
+                    <div className="row-between" style={{ marginBottom: 6 }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono, ui-monospace, monospace)",
+                          fontSize: "0.875rem"
+                        }}
+                      >
+                        {row.agentType}
+                      </span>
+                      <span className="dim">
+                        {row.count} · {pct}%
+                      </span>
+                    </div>
+                    <div className="bar">
+                      <span style={{ width: `${pct}%`, background: "#8b5cf6" }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
