@@ -14,7 +14,11 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
-  const isAuthRoute = pathname === "/login" || pathname === "/signup";
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/reset-password/");
   const isPublicApiAuthRoute = pathname.startsWith("/api/auth");
   // Invite links must be reachable while signed out — the page itself
   // decides whether to prompt for login/signup or accept immediately.

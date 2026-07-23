@@ -13,6 +13,9 @@ import {
   createInvitation,
   getInvitationByToken,
   acceptInvitation,
+  createPasswordResetToken,
+  getPasswordResetByToken,
+  consumePasswordResetToken,
   writeAuditLog,
   slugify,
   getPlatformOverviewStats,
@@ -24,8 +27,9 @@ import {
   listPlatformAuditEvents,
   getTenantDetailForAdmin
 } from "@/lib/db/queries";
-import { organizations, users, memberships, invitations, auditLog } from "@/lib/db/schema";
+import { organizations, users, memberships, invitations, auditLog, passwordResetTokens } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/testDb";
+import { hashPassword, verifyPassword } from "@/lib/crypto";
 
 let testDb: Database;
 
@@ -37,6 +41,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   __setDbForTests(testDb);
   await testDb.delete(auditLog);
+  await testDb.delete(passwordResetTokens);
   await testDb.delete(invitations);
   await testDb.delete(memberships);
   await testDb.delete(users);
@@ -211,6 +216,50 @@ describe("invitations", () => {
 
     const rejected = await acceptInvitation("not-a-real-token", invitee.user.id);
     expect(rejected).toBeUndefined();
+  });
+});
+
+describe("password reset tokens", () => {
+  it("creates, validates, and consumes a reset token", async () => {
+    const { user } = await createUserAndOrg({
+      email: "reset@example.com",
+      name: "Reset",
+      passwordHash: await hashPassword("oldpass1"),
+      organizationName: "Reset Co"
+    });
+
+    const { token } = await createPasswordResetToken(user.id);
+    const found = await getPasswordResetByToken(token);
+    expect(found?.userId).toBe(user.id);
+    expect(found?.userEmail).toBe("reset@example.com");
+    expect(found?.usedAt).toBeNull();
+
+    const newHash = await hashPassword("newpass2");
+    const consumed = await consumePasswordResetToken({ token, passwordHash: newHash });
+    expect(consumed?.userId).toBe(user.id);
+
+    const again = await consumePasswordResetToken({ token, passwordHash: newHash });
+    expect(again).toBeUndefined();
+
+    const updated = await getUserByEmail("reset@example.com");
+    expect(updated).toBeDefined();
+    expect(await verifyPassword("newpass2", updated!.passwordHash)).toBe(true);
+  });
+
+  it("invalidates prior unused tokens when issuing a new one", async () => {
+    const { user } = await createUserAndOrg({
+      email: "reset2@example.com",
+      name: "Reset2",
+      passwordHash: "h",
+      organizationName: "Reset Co 2"
+    });
+
+    const first = await createPasswordResetToken(user.id);
+    const second = await createPasswordResetToken(user.id);
+    const stale = await getPasswordResetByToken(first.token);
+    expect(stale?.usedAt).not.toBeNull();
+    const fresh = await getPasswordResetByToken(second.token);
+    expect(fresh?.usedAt).toBeNull();
   });
 });
 

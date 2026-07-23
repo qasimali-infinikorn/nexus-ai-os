@@ -8,6 +8,7 @@ import { NAV_GROUPS } from "./nav-config";
 import { logoutAction } from "@/lib/actions/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { ShellLayoutProvider } from "./shell-layout";
+import { OrgSwitcher, type OrgOption } from "./org-switcher";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -33,6 +34,8 @@ export function AppShell({
   userName,
   roleLabel,
   orgName,
+  organizationId,
+  organizations = [],
   isPlatformAdmin = false,
   featureFlags = {},
   children
@@ -40,6 +43,8 @@ export function AppShell({
   userName: string;
   roleLabel: string;
   orgName: string;
+  organizationId: string;
+  organizations?: OrgOption[];
   isPlatformAdmin?: boolean;
   featureFlags?: Record<string, boolean>;
   children: React.ReactNode;
@@ -84,7 +89,14 @@ export function AppShell({
               </span>
               <div className="sidebar-brand" style={{ padding: 0 }}>
                 <h2>Nexus</h2>
-                <p>{orgName}</p>
+                <OrgSwitcher
+                  organizations={
+                    organizations.length > 0
+                      ? organizations
+                      : [{ id: organizationId, name: orgName, role: "member" }]
+                  }
+                  currentOrganizationId={organizationId}
+                />
               </div>
             </div>
 

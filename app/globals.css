@@ -290,6 +290,28 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
 }
 
+.sidebar-brand .org-switcher {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  max-width: 148px;
+  font-size: 0.656rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.sidebar-brand .org-switcher:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .sidebar-top {
   display: flex;
   flex-direction: column;

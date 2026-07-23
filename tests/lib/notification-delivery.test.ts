@@ -93,6 +93,28 @@ describe("notification delivery", () => {
     expect(body.text).toContain("https://app.example/invite/tok_abc");
   });
 
+  it("sends password reset emails via Resend", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.EMAIL_FROM = "Nexus <notify@example.com>";
+    process.env.APP_URL = "https://app.example";
+    const { sendPasswordResetEmail } = await import("@/lib/notifications/deliver");
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      text: async () => ""
+    });
+
+    const result = await sendPasswordResetEmail({
+      to: "user@example.com",
+      resetPath: "/reset-password/tok_xyz"
+    });
+    expect(result).toEqual({ ok: true });
+    const body = JSON.parse(
+      (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string
+    );
+    expect(body.subject).toContain("Reset");
+    expect(body.text).toContain("https://app.example/reset-password/tok_xyz");
+  });
+
   it("posts to Slack incoming webhooks only", async () => {
     (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
     const bad = await sendSlackWebhook({

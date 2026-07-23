@@ -37,6 +37,11 @@ export const LOGIN_IP_LIMIT = 20;
 export const LOGIN_EMAIL_LIMIT = 10;
 export const LOGIN_RATE_WINDOW_MS = 15 * 60_000;
 
+/** Password-reset requests per IP / email within the window. */
+export const PASSWORD_RESET_IP_LIMIT = 10;
+export const PASSWORD_RESET_EMAIL_LIMIT = 5;
+export const PASSWORD_RESET_WINDOW_MS = 60 * 60_000;
+
 export function rateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
   const now = Date.now();
   sweepExpired(now);
@@ -57,7 +62,8 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
 }
 
 /** Read-only check — does not consume a slot. */
-export function getRateLimitState(key: string, limit: number, _windowMs: number): RateLimitResult {
+export function getRateLimitState(key: string, limit: number, windowMs: number): RateLimitResult {
+  void windowMs; // kept for API symmetry with rateLimit(); expiry lives on the bucket
   const now = Date.now();
   sweepExpired(now);
   const bucket = buckets.get(key);
@@ -114,6 +120,33 @@ export function recordFailedLoginAttempt(ip: string, email: string): void {
   const { ipKey, emailKey } = loginRateLimitKeys(ip, email);
   rateLimit(ipKey, LOGIN_IP_LIMIT, LOGIN_RATE_WINDOW_MS);
   rateLimit(emailKey, LOGIN_EMAIL_LIMIT, LOGIN_RATE_WINDOW_MS);
+}
+
+export function passwordResetRateLimitKeys(
+  ip: string,
+  email: string
+): { ipKey: string; emailKey: string } {
+  return {
+    ipKey: `pwreset:ip:${ip}`,
+    emailKey: `pwreset:email:${email.trim().toLowerCase()}`
+  };
+}
+
+export function assertPasswordResetAllowed(ip: string, email: string): { ok: true } | { ok: false } {
+  const { ipKey, emailKey } = passwordResetRateLimitKeys(ip, email);
+  if (!getRateLimitState(ipKey, PASSWORD_RESET_IP_LIMIT, PASSWORD_RESET_WINDOW_MS).allowed) {
+    return { ok: false };
+  }
+  if (!getRateLimitState(emailKey, PASSWORD_RESET_EMAIL_LIMIT, PASSWORD_RESET_WINDOW_MS).allowed) {
+    return { ok: false };
+  }
+  return { ok: true };
+}
+
+export function recordPasswordResetRequest(ip: string, email: string): void {
+  const { ipKey, emailKey } = passwordResetRateLimitKeys(ip, email);
+  rateLimit(ipKey, PASSWORD_RESET_IP_LIMIT, PASSWORD_RESET_WINDOW_MS);
+  rateLimit(emailKey, PASSWORD_RESET_EMAIL_LIMIT, PASSWORD_RESET_WINDOW_MS);
 }
 
 export function resetRateLimiterForTests() {

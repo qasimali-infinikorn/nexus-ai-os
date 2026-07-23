@@ -82,6 +82,9 @@ function LoginForm() {
             className="form-input auth-input"
             placeholder="••••••••"
           />
+          <p className="form-hint" style={{ marginTop: 6 }}>
+            <Link href="/forgot-password">Forgot password?</Link>
+          </p>
         </div>
 
         <button type="submit" className="btn-primary auth-submit" disabled={pending} aria-busy={pending}>

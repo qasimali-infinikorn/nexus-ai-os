@@ -95,6 +95,23 @@ export async function sendInvitationEmail(params: {
   });
 }
 
+/** Password reset link — same Resend credentials as notification mail. */
+export async function sendPasswordResetEmail(params: {
+  to: string;
+  resetPath: string;
+}): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  const href = params.resetPath.startsWith("/") ? params.resetPath : `/${params.resetPath}`;
+  return sendNotificationEmail({
+    to: params.to,
+    payload: {
+      title: "Reset your password",
+      body: "Use this link to choose a new Nexus password. It expires in 1 hour. If you didn't request this, you can ignore the email.",
+      href,
+      kind: "PasswordReset"
+    }
+  });
+}
+
 export async function sendSlackWebhook(params: {
   webhookUrl: string;
   payload: DeliveryPayload;

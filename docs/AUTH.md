@@ -1,4 +1,4 @@
-# Accounts, Organizations, and Access Control
+## Accounts, Organizations, and Access Control
 
 Phase 1 replaced the original no-login, browser-only BYOK model with real
 accounts. This doc covers what changed and how to run it locally — see
@@ -14,9 +14,10 @@ supersedes.
   `lib/db/queries.ts`).
 - **Memberships** link a user to an organization with a role (`owner`,
   `admin`, `member`). A user can belong to more than one org (via invite
-  acceptance), but Phase 1 doesn't yet expose an org switcher — the session
-  resolves to the user's *first* membership (`lib/auth.ts`'s `jwt`
-  callback). Multi-org switching is a later-phase concern.
+  acceptance). The sidebar **org switcher** updates the JWT active org via
+  Auth.js `unstable_update` (`switchOrganizationAction`) after verifying
+  membership. On sign-in, the session defaults to the earliest membership
+  (`listMembershipsForUser` ordered by `created_at`).
 - **`isPlatformAdmin`** on `users` is separate from any org role — it gates
   the `/admin` Superadmin console (Phase 3), and isn't set by any UI yet
   (there's no self-serve path to becoming a platform admin; set it directly
@@ -27,12 +28,16 @@ supersedes.
   feature in that org. No API key is ever sent from or stored in the
   browser — `/api/orchestrate` resolves it server-side from the session's
   organization (see `app/api/orchestrate/route.ts`).
-- **Invitations**: an owner/admin creates one from **Settings → Team**,
-  which generates a copyable link (`/invite/<token>`) — no email is sent
-  yet. Accepting it while logged out prompts login/signup first, then
-  completes the membership.
-- **Audit log**: every privileged mutation (password change, invite
-  created, org key set/removed) writes an `audit_log` row via
+- **Invitations**: an owner/admin creates one from **Settings → Team**. When
+  Resend is configured the invite is emailed; a copyable `/invite/<token>`
+  link is always shown as fallback. Accepting while logged out prompts
+  login/signup first, then completes the membership.
+- **Password reset**: `/forgot-password` emails a one-hour
+  `/reset-password/<token>` link (Resend). Tokens live in
+  `password_reset_tokens` and are single-use. Responses never reveal whether
+  the email is registered.
+- **Audit log**: every privileged mutation (password change/reset, invite
+  created, org key set/removed, org switch) writes an `audit_log` row via
   `writeAuditLog`. Nothing ever updates or deletes a row there.
 
 ## Why Auth.js with no database adapter
@@ -58,12 +63,13 @@ in `proxy.ts` (default-exported `auth((req) => {...})`, matching the
 `export default function proxy(request) {...}` convention).
 
 `proxy.ts` only performs optimistic, JWT-derived redirects (unauthenticated
-→ `/login`, authenticated hitting `/login`/`/signup` → `/dashboard`,
-non-platform-admin hitting `/admin` → `/dashboard`). Per Next's own auth
-guide, proxy/middleware is never the sole authorization check — every
-server action and route handler re-verifies the session and role itself
-(see `requireSession`/`requireAdmin` in `lib/actions/settings.ts`, and the
-`auth()` calls in `app/api/orchestrate/route.ts` and
+→ `/login`, authenticated hitting auth pages → `/dashboard`,
+non-platform-admin hitting `/admin` → `/dashboard`). Public auth pages
+include `/login`, `/signup`, `/forgot-password`, and `/reset-password/*`.
+Per Next's own auth guide, proxy/middleware is never the sole authorization
+check — every server action and route handler re-verifies the session and
+role itself (see `requireSession`/`requireAdmin` in `lib/actions/settings.ts`,
+and the `auth()` calls in `app/api/orchestrate/route.ts` and
 `app/api/knowledge/route.ts`).
 
 ## Local setup
@@ -92,18 +98,19 @@ See `docs/plans/ADMIN_PORTAL.md` for the Phase 3 console plan.
 
 ## Known gaps (Phase 1)
 
-- No org switcher for users with multiple memberships (uses the first one).
+- ~~No org switcher~~ **done** — sidebar select when the user has 2+ memberships.
 - ~~Invitations aren't emailed~~ **done** — `sendInvitationEmail` via Resend when
   `RESEND_API_KEY` + `EMAIL_FROM` are set (Settings → Team + Superadmin Add tenant).
   Copy-link fallback remains when email is skipped or fails.
-- No password reset flow.
+- ~~No password reset flow~~ **done** — `/forgot-password` + `/reset-password/[token]`.
 - ~~No rate limiting on login attempts~~ **done** — failed credentials are
   capped per IP (`LOGIN_IP_LIMIT`) and per email (`LOGIN_EMAIL_LIMIT`) over
-  a 15-minute window in `lib/rate-limit.ts` / `loginAction`.
+  a 15-minute window in `lib/rate-limit.ts` / `loginAction`. Password-reset
+  requests are similarly capped (`PASSWORD_RESET_*`).
 - No dedicated integration test drives `signIn()`/`signOut()` end-to-end
   (Auth.js's Credentials flow expects Next's real request-scoped
   `cookies()`, which isn't available when calling route handlers directly
   in Vitest the way `tests/api/*.test.ts` does for the other routes).
   `tests/lib/queries.test.ts` covers the underlying data-access logic
-  (`createUserAndOrg`, invitations, org provider keys, audit log) against a
-  real embedded Postgres instead.
+  (`createUserAndOrg`, invitations, org provider keys, audit log, password
+  reset tokens) against a real embedded Postgres instead.

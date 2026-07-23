@@ -11,6 +11,7 @@ import {
   memberships,
   orgProviderKeys,
   invitations,
+  passwordResetTokens,
   auditLog,
   projectTasks,
   projects,
@@ -26,7 +27,8 @@ import {
   type TaskStatus,
   type Project,
   type ProjectStatus,
-  type AuditLogEntry
+  type AuditLogEntry,
+  type PasswordResetToken
 } from "./schema";
 // Aliased: `projects` is the Drizzle table above; these are the seed rows.
 import { boardTaskSeeds, projects as projectSeeds } from "../workspace/content";
@@ -137,7 +139,8 @@ export async function listMembershipsForUser(
     .select({ membership: memberships, organization: organizations })
     .from(memberships)
     .innerJoin(organizations, eq(memberships.organizationId, organizations.id))
-    .where(eq(memberships.userId, userId));
+    .where(eq(memberships.userId, userId))
+    .orderBy(asc(memberships.createdAt));
   return rows;
 }
 
@@ -462,6 +465,85 @@ export async function createInvitation(params: {
     expiresAt
   });
   return { token };
+}
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/** Creates a fresh reset token; invalidates unused prior tokens for the user. */
+export async function createPasswordResetToken(userId: string): Promise<{ token: string; expiresAt: Date }> {
+  const db = getDb();
+  const token = generateToken();
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
+
+  await db.insert(passwordResetTokens).values({
+    userId,
+    token,
+    expiresAt
+  });
+
+  return { token, expiresAt };
+}
+
+export async function getPasswordResetByToken(
+  token: string
+): Promise<(PasswordResetToken & { userEmail: string }) | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select({
+      id: passwordResetTokens.id,
+      userId: passwordResetTokens.userId,
+      token: passwordResetTokens.token,
+      expiresAt: passwordResetTokens.expiresAt,
+      usedAt: passwordResetTokens.usedAt,
+      createdAt: passwordResetTokens.createdAt,
+      userEmail: users.email
+    })
+    .from(passwordResetTokens)
+    .innerJoin(users, eq(passwordResetTokens.userId, users.id))
+    .where(eq(passwordResetTokens.token, token))
+    .limit(1);
+  return row;
+}
+
+/** Marks token used and updates password in one transaction. */
+export async function consumePasswordResetToken(params: {
+  token: string;
+  passwordHash: string;
+}): Promise<{ userId: string } | undefined> {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.token, params.token))
+      .limit(1);
+    if (!row) return undefined;
+    if (row.usedAt) return undefined;
+    if (row.expiresAt < new Date()) return undefined;
+
+    await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, row.id));
+
+    await tx
+      .update(users)
+      .set({ passwordHash: params.passwordHash })
+      .where(eq(users.id, row.userId));
+
+    // Invalidate any other outstanding tokens for this user.
+    await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResetTokens.userId, row.userId), isNull(passwordResetTokens.usedAt)));
+
+    return { userId: row.userId };
+  });
 }
 
 export async function getInvitationByToken(token: string) {

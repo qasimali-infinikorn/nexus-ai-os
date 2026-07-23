@@ -69,6 +69,8 @@ describe("guardrail harness", () => {
     const proxy = fs.readFileSync(path.join(process.cwd(), "proxy.ts"), "utf8");
     expect(proxy).toContain('pathname === "/api/health"');
     expect(proxy).toContain('pathname.startsWith("/api/webhooks/")');
+    expect(proxy).toContain('pathname === "/forgot-password"');
+    expect(proxy).toContain('pathname.startsWith("/reset-password/")');
   });
 
   it("documents WEBHOOK_SECRET auth on devops ingest", () => {

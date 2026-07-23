@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getOrganizationById } from "@/lib/db/queries";
+import { getOrganizationById, listMembershipsForUser } from "@/lib/db/queries";
 import { getFeatureFlagsForOrg } from "@/lib/db/feature-flags";
 import { AppShell } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
@@ -30,10 +30,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login?stale=1");
   }
 
-  const featureFlags = await getFeatureFlagsForOrg(session.organizationId);
+  const [featureFlags, memberships] = await Promise.all([
+    getFeatureFlagsForOrg(session.organizationId),
+    listMembershipsForUser(session.user.id)
+  ]);
 
   const roleLabel = ROLE_LABELS[session.role ?? "member"] ?? "Member";
   const firstName = session.user.name?.split(/\s+/)[0] || "there";
+  const organizations = memberships.map((m) => ({
+    id: m.organization.id,
+    name: m.organization.name,
+    role: m.membership.role
+  }));
 
   return (
     <>
@@ -45,6 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         userName={session.user.name}
         roleLabel={`${roleLabel} · ${session.organizationName ?? "Workspace"}`}
         orgName={session.organizationName ?? "Workspace"}
+        organizationId={session.organizationId}
+        organizations={organizations}
         isPlatformAdmin={Boolean(session.user.isPlatformAdmin)}
         featureFlags={featureFlags}
       >

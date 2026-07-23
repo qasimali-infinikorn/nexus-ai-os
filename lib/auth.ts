@@ -1,7 +1,12 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
-import { getUserByEmail, listMembershipsForUser } from "./db/queries";
+import {
+  getMembership,
+  getOrganizationById,
+  getUserByEmail,
+  listMembershipsForUser
+} from "./db/queries";
 import { verifyPassword } from "./crypto";
 
 const credentialsSchema = z.object({
@@ -9,7 +14,7 @@ const credentialsSchema = z.object({
   password: z.string().min(1)
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   // Required in environments (Vercel previews, local dev without AUTH_URL
@@ -38,23 +43,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     })
   ],
   callbacks: {
-    // Runs on sign-in (when `user` is present) and on every subsequent
-    // request (token refresh) — only re-resolve the active org on sign-in,
-    // not on every request, to keep this cheap.
-    async jwt({ token, user }) {
+    // Runs on sign-in (when `user` is present), on session update (org switch),
+    // and on token refresh. Org fields are only rewritten on sign-in / update.
+    async jwt({ token, user, trigger, session }) {
       if (user?.id) {
         token.userId = user.id;
         token.isPlatformAdmin = Boolean(user.isPlatformAdmin);
 
         const memberships = await listMembershipsForUser(user.id);
-        // Phase 1: a user has exactly one org (created at signup or via
-        // invitation acceptance), so "first membership" is unambiguous.
-        // Org switching for multi-org users is a later-phase concern.
         const primary = memberships[0];
         token.organizationId = primary?.organization.id ?? null;
         token.organizationName = primary?.organization.name ?? null;
         token.role = primary?.membership.role ?? null;
       }
+
+      if (trigger === "update" && token.userId && session?.organizationId) {
+        const organizationId = String(session.organizationId);
+        const membership = await getMembership(token.userId, organizationId);
+        if (membership) {
+          const org = await getOrganizationById(organizationId);
+          if (org) {
+            token.organizationId = org.id;
+            token.organizationName = org.name;
+            token.role = membership.role;
+          }
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {

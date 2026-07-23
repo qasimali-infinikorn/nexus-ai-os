@@ -198,6 +198,26 @@ export type OrgProviderKey = typeof orgProviderKeys.$inferSelect;
 export type NewOrgProviderKey = typeof orgProviderKeys.$inferInsert;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
+
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("password_reset_tokens_token_unique_idx").on(table.token),
+    index("password_reset_tokens_user_id_idx").on(table.userId)
+  ]
+);
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;
 

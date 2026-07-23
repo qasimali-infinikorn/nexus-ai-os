@@ -17,7 +17,8 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 ## Remaining (optional / later)
 
 - Two-way Jira/GitHub sync into Projects / Code Review boards (webhooks today only fan out notifications)
-- Admin backlog: Stripe MRR, ~~per-tenant flag UI~~, ~~incident banners~~, impersonation
+- Admin backlog: ~~Stripe MRR~~, ~~per-tenant flag UI~~, ~~incident banners~~, impersonation (deferred)
+- Auth gaps: ~~login rate limit~~, ~~invite email~~, ~~password reset~~, ~~org switcher~~
 
 ## Migration
 
