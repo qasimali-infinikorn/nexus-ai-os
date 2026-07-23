@@ -25,6 +25,7 @@ import {
   createOrganizationAsAdmin,
   writePlatformAuditEvent,
   listPlatformAuditEvents,
+  listOrgAuditEvents,
   getTenantDetailForAdmin
 } from "@/lib/db/queries";
 import { organizations, users, memberships, invitations, auditLog, passwordResetTokens } from "@/lib/db/schema";
@@ -285,6 +286,48 @@ describe("writeAuditLog", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("org_provider_key.set");
     expect(rows[0].metadata).toEqual({ note: "test" });
+  });
+});
+
+describe("listOrgAuditEvents", () => {
+  it("returns only that org's events with actor details", async () => {
+    const a = await createUserAndOrg({
+      email: "audit-a@example.com",
+      name: "Alice",
+      passwordHash: "h",
+      organizationName: "Audit Org A"
+    });
+    const b = await createUserAndOrg({
+      email: "audit-b@example.com",
+      name: "Bob",
+      passwordHash: "h",
+      organizationName: "Audit Org B"
+    });
+
+    await writeAuditLog({
+      organizationId: a.organization.id,
+      actorUserId: a.user.id,
+      action: "invitation.created",
+      metadata: { email: "guest@example.com" }
+    });
+    await writeAuditLog({
+      organizationId: b.organization.id,
+      actorUserId: b.user.id,
+      action: "organization.renamed",
+      metadata: { name: "Renamed B" }
+    });
+    await writePlatformAuditEvent({
+      actorUserId: a.user.id,
+      action: "platform.tenant.suspend",
+      targetType: "organization",
+      targetId: a.organization.id
+    });
+
+    const events = await listOrgAuditEvents({ organizationId: a.organization.id });
+    expect(events).toHaveLength(1);
+    expect(events[0].action).toBe("invitation.created");
+    expect(events[0].actorName).toBe("Alice");
+    expect(events[0].actorEmail).toBe("audit-a@example.com");
   });
 });
 

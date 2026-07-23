@@ -37,8 +37,11 @@ supersedes.
   `password_reset_tokens` and are single-use. Responses never reveal whether
   the email is registered.
 - **Audit log**: every privileged mutation (password change/reset, invite
-  created, org key set/removed, org switch) writes an `audit_log` row via
+  creation, org key set/delete, workspace rename, task edits, calendar
+  disconnect, org switch, etc.) writes an `audit_log` row via
   `writeAuditLog`. Nothing ever updates or deletes a row there.
+  Superadmin reads platform events at `/admin/audit`; tenants see
+  org-scoped events under **Settings → Workspace**.
 
 ## Why Auth.js with no database adapter
 

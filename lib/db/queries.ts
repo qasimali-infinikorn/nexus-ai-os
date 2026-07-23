@@ -385,6 +385,46 @@ export async function listPlatformAuditEvents(params?: {
   return rows;
 }
 
+/** Org-scoped audit rows (tenant Settings → Workspace). Excludes platform events. */
+export type OrgAuditEvent = PlatformAuditEvent;
+
+export async function listOrgAuditEvents(params: {
+  organizationId: string;
+  limit?: number;
+  action?: string;
+  actionPrefix?: string;
+}): Promise<OrgAuditEvent[]> {
+  const db = getDb();
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+  const conditions = [eq(auditLog.organizationId, params.organizationId)];
+  if (params.action) {
+    conditions.push(eq(auditLog.action, params.action));
+  } else if (params.actionPrefix) {
+    conditions.push(like(auditLog.action, `${params.actionPrefix}%`));
+  }
+
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      organizationId: auditLog.organizationId,
+      actorUserId: auditLog.actorUserId,
+      action: auditLog.action,
+      targetType: auditLog.targetType,
+      targetId: auditLog.targetId,
+      metadata: auditLog.metadata,
+      createdAt: auditLog.createdAt,
+      actorName: users.name,
+      actorEmail: users.email
+    })
+    .from(auditLog)
+    .leftJoin(users, eq(auditLog.actorUserId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
+
+  return rows;
+}
+
 // Returns the decrypted plaintext key, or undefined if the org hasn't
 // configured that provider. Callers must never log/return this value to
 // the client verbatim.

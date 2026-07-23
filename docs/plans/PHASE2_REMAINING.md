@@ -14,6 +14,8 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 | **Notifications** | Done | Inbox, prefs, email/Slack, **GitHub + Jira webhooks** for Reviews/Mentions. |
 | **Dashboard** | Done | Live KPIs from meetings, tasks, incidents, agent runs. |
 | **Tracker → Kanban** | Done (one-way) | Optional `projectSlug` on GitHub/Jira webhooks upserts Issues → `project_tasks`. |
+| **Knowledge Base** | Done | Org-scoped documents (`0013`); semantic search via org OpenAI key. |
+| **Org audit UI** | Done | Settings → Workspace lists real `audit_log` rows for the active org. |
 
 ## Remaining (optional / later)
 

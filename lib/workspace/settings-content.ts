@@ -77,10 +77,3 @@ export const billing = {
     { id: "INV-2026-04", date: "April 1, 2026", amount: "$3,900.00", status: "Paid" }
   ]
 };
-
-export const workspaceAuditLog = [
-  { id: "a1", actor: "Alex Morgan", action: "enabled Enforce SSO", ago: "2 h ago" },
-  { id: "a2", actor: "Priya Nair", action: "invited jordan.lee@acmecloud.com", ago: "Yesterday" },
-  { id: "a3", actor: "ci-bot", action: "rotated the production API key", ago: "2 days ago" },
-  { id: "a4", actor: "Dana Ruiz", action: "exported the Meridian proposal", ago: "3 days ago" }
-];
