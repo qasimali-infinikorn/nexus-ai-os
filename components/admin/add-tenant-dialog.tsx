@@ -43,7 +43,8 @@ export function AddTenantDialog() {
         </div>
 
         <p className="dim" style={{ margin: "0 0 16px", fontSize: "0.875rem" }}>
-          Creates an organization and an owner invite link (email is not sent automatically).
+          Creates an organization and emails an owner invite when Resend is configured
+          (<code>RESEND_API_KEY</code> + <code>EMAIL_FROM</code>). The invite path is always shown as a fallback.
         </p>
 
         {state?.error ? (

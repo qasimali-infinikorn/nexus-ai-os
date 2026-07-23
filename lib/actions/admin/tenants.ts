@@ -116,10 +116,33 @@ export async function createTenantAction(
     }
   });
 
+  const invitePath = `/invite/${token}`;
+  const { sendInvitationEmail } = await import("@/lib/notifications/deliver");
+  const emailResult = await sendInvitationEmail({
+    to: parsed.data.ownerEmail,
+    organizationName: organization.name,
+    role: "owner",
+    invitePath,
+    invitedByName: user.name
+  });
+
   revalidateAdminTenantPaths(organization.id);
+
+  if (emailResult.skipped) {
+    return {
+      success: `Created ${organization.name}. Email isn't configured — share the invite link with the owner.`,
+      invitePath
+    };
+  }
+  if (!emailResult.ok) {
+    return {
+      success: `Created ${organization.name}. Invite email failed — share the link with the owner.`,
+      invitePath
+    };
+  }
   return {
-    success: `Created ${organization.name}. Share the invite link with the owner.`,
-    invitePath: `/invite/${token}`
+    success: `Created ${organization.name}. Owner invite emailed to ${parsed.data.ownerEmail}.`,
+    invitePath
   };
 }
 

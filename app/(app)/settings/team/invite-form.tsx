@@ -24,7 +24,7 @@ export function InviteForm() {
       {state?.success && fullInviteUrl ? (
         <div className="save-notice" style={{ marginBottom: 16, flexWrap: "wrap" }}>
           <Check size={16} aria-hidden />
-          <span>Invite created — no email is sent yet, share this link directly:</span>
+          <span>{state.success}</span>
           <code style={{ wordBreak: "break-all" }}>{fullInviteUrl}</code>
           <button
             type="button"

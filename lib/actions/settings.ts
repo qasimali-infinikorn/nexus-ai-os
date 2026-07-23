@@ -17,7 +17,7 @@ import {
 } from "@/lib/db/queries";
 import { ORG_KEY_PROVIDERS, MEMBERSHIP_ROLES, type MembershipRole } from "@/lib/db/schema";
 
-export type FormState = { error?: string; success?: string } | undefined;
+export type FormState = { error?: string; success?: string; inviteUrl?: string; emailSent?: boolean } | undefined;
 
 async function requireSession() {
   const session = await auth();
@@ -116,8 +116,37 @@ export async function inviteTeammateAction(
     metadata: { email: parsed.data.email, role: parsed.data.role }
   });
 
+  const invitePath = `/invite/${token}`;
+  const { sendInvitationEmail } = await import("@/lib/notifications/deliver");
+  const emailResult = await sendInvitationEmail({
+    to: parsed.data.email,
+    organizationName: session.organizationName ?? "a Nexus workspace",
+    role: parsed.data.role,
+    invitePath,
+    invitedByName: session.user.name
+  });
+
   revalidatePath("/settings/team");
-  return { success: "Invitation created.", inviteUrl: `/invite/${token}` };
+
+  if (emailResult.skipped) {
+    return {
+      success: "Invitation created. Email isn't configured — share this link:",
+      inviteUrl: invitePath,
+      emailSent: false
+    };
+  }
+  if (!emailResult.ok) {
+    return {
+      success: "Invitation created, but email failed to send. Share this link:",
+      inviteUrl: invitePath,
+      emailSent: false
+    };
+  }
+  return {
+    success: "Invitation emailed. You can still copy the link:",
+    inviteUrl: invitePath,
+    emailSent: true
+  };
 }
 
 const orgKeySchema = z.object({

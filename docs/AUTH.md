@@ -93,7 +93,9 @@ See `docs/plans/ADMIN_PORTAL.md` for the Phase 3 console plan.
 ## Known gaps (Phase 1)
 
 - No org switcher for users with multiple memberships (uses the first one).
-- Invitations aren't emailed — the link must be shared manually.
+- ~~Invitations aren't emailed~~ **done** — `sendInvitationEmail` via Resend when
+  `RESEND_API_KEY` + `EMAIL_FROM` are set (Settings → Team + Superadmin Add tenant).
+  Copy-link fallback remains when email is skipped or fails.
 - No password reset flow.
 - ~~No rate limiting on login attempts~~ **done** — failed credentials are
   capped per IP (`LOGIN_IP_LIMIT`) and per email (`LOGIN_EMAIL_LIMIT`) over

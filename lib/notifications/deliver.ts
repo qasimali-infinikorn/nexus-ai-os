@@ -69,6 +69,32 @@ export async function sendNotificationEmail(params: {
   }
 }
 
+/** Workspace invite — uses the same Resend credentials as notification mail. */
+export async function sendInvitationEmail(params: {
+  to: string;
+  organizationName: string;
+  role: string;
+  invitePath: string;
+  invitedByName?: string | null;
+}): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  const inviter = params.invitedByName?.trim();
+  const role = params.role;
+  const org = params.organizationName;
+  const body = inviter
+    ? `${inviter} invited you to join ${org} on Nexus as ${role}. The link expires in 7 days.`
+    : `You've been invited to join ${org} on Nexus as ${role}. The link expires in 7 days.`;
+
+  return sendNotificationEmail({
+    to: params.to,
+    payload: {
+      title: `Join ${org}`,
+      body,
+      href: params.invitePath.startsWith("/") ? params.invitePath : `/${params.invitePath}`,
+      kind: "Invite"
+    }
+  });
+}
+
 export async function sendSlackWebhook(params: {
   webhookUrl: string;
   payload: DeliveryPayload;

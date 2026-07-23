@@ -103,11 +103,11 @@ existing encrypted keys unreadable (org admins would need to re-enter them).
 ### Open — not fixed in this pass
 
 See [`AUTH.md`](./AUTH.md)'s "Known gaps" for the auth-specific items (no
-org switcher, no invite emails, no password reset). Login attempt rate
-limiting is in place (`loginAction` + IP/email buckets). Google and
-Microsoft Calendar OAuth for Meetings are live (per-user connections).
-Notification email (Resend) and Slack incoming webhooks honor the
-Settings → Notifications matrix when configured.
+org switcher, no password reset). Login attempt rate limiting and invite
+emails (Resend) are in place. Google and Microsoft Calendar OAuth for
+Meetings are live (per-user connections). Notification email (Resend) and
+Slack incoming webhooks honor the Settings → Notifications matrix when
+configured.
 
 Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 (limits + proxy public routes + webhook secret handling).
@@ -141,6 +141,7 @@ Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 | Rate limit | `loginAction` (failed attempts) | 20 / 15 min per IP · 10 / 15 min per email |
 | Calendar OAuth | Google / Microsoft Calendar connect | Separate from Auth.js; HMAC state (`AUTH_SECRET`); encrypted refresh tokens |
 | Email notify | Resend API | `RESEND_API_KEY` + `EMAIL_FROM`; skipped when unset |
+| Invite email | Resend API | Same credentials; Settings → Team + admin Add tenant |
 | Slack notify | Incoming webhook | Per-user URL in `user_settings.delivery`; must be `hooks.slack.com` |
 | `provider` allowlist | `/api/orchestrate` | `openai` \| `anthropic` \| `google` |
 | `prompt` length | `/api/orchestrate` | 20,000 chars |
