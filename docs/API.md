@@ -163,18 +163,19 @@ a single `error` event.
 
 ## `/api/knowledge`
 
-Manages `documents`/`document_chunks` rows in Postgres (see
-[`DATABASE.md`](./DATABASE.md)) that back the Knowledge Base. Requires
-`DATABASE_URL` to be set — every handler returns `500` with a message
+Manages **org-scoped** `documents`/`document_chunks` rows in Postgres (see
+[`DATABASE.md`](./DATABASE.md)) that back the Knowledge Base. Requires an
+authenticated session — every query is filtered to `session.organizationId`.
+Requires `DATABASE_URL` to be set — every handler returns `500` with a message
 telling you so if it isn't, rather than crashing.
 
 ### `GET /api/knowledge`
 
-Lists all documents.
+Lists documents for the active organization.
 
 ```ts
 // 200
-{ success: true, files: { name: string; sizeBytes: number; updatedAt: string }[] }
+{ success: true, files: { name: string; sizeBytes: number; updatedAt: string }[], semanticAvailable: boolean }
 // 500
 { success: false, error: string }
 ```
@@ -190,21 +191,22 @@ mode?: "keyword" | "semantic"   // search only; default "keyword"
 embed?: false                   // add only; set false to skip embedding even if a key exists
 ```
 
-**`action: "add"`** — create or overwrite a document by name.
+**`action: "add"`** — create or overwrite a document by name within the org.
 
 ```ts
 { action: "add", name: string, content: string, embed?: false }
 ```
 `name` is trimmed and capped at `MAX_KNOWLEDGE_NAME_LENGTH` (200 chars); it's
-just a unique label now, not a filesystem path, so no character sanitization
-is needed. `content` is capped at `MAX_KNOWLEDGE_CONTENT_BYTES` (2 MB);
-oversized content returns `400`. Adding a `name` that already exists
-replaces its content and re-chunks it from scratch (old chunks/embeddings
+just a label now, not a filesystem path, so no character sanitization
+is needed. Uniqueness is per `(organizationId, name)` — two orgs may share a
+filename. `content` is capped at `MAX_KNOWLEDGE_CONTENT_BYTES` (2 MB);
+oversized content returns `400`. Adding a `name` that already exists **in this
+org** replaces its content and re-chunks it from scratch (old chunks/embeddings
 for that document are deleted first). When the org has an OpenAI key, each
 chunk is embedded via `lib/embeddings.ts` unless `embed: false`. Otherwise
 chunks are stored with `embedding: null` (keyword search still works).
 
-**`action: "delete"`** — remove a document by name (cascades to its chunks).
+**`action: "delete"`** — remove a document by name in this org (cascades to its chunks).
 
 ```ts
 { action: "delete", name: string }

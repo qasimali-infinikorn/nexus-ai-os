@@ -18,7 +18,8 @@ organizations. The BYOK model moved from per-browser `localStorage` to
   exist to avoid CORS issues calling provider APIs directly from the browser.
 - The Knowledge Base uses the same org OpenAI key for embeddings when
   documents are saved and when `mode: "semantic"` search runs — never a
-  client-supplied key.
+  client-supplied key. Document rows are scoped by `organization_id`;
+  list/add/delete/search never cross tenants.
 
 **Implication:** a compromised `ENCRYPTION_KEY` (or direct database access)
 exposes every org's provider keys — treat it as seriously as the keys

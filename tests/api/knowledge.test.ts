@@ -2,9 +2,12 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { __setDbForTests, type Database } from "@/lib/db/client";
-import { documentChunks, documents, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
+import { documentChunks, documents, organizations, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
 import { resetRateLimiterForTests } from "@/lib/rate-limit";
 import { createTestDb } from "../helpers/testDb";
+
+const ORG_A = "00000000-0000-4000-8000-0000000000a1";
+const ORG_B = "00000000-0000-4000-8000-0000000000b2";
 
 // /api/knowledge now requires an authenticated session (see
 // app/api/knowledge/route.ts) — mock it so these tests keep exercising the
@@ -13,7 +16,7 @@ import { createTestDb } from "../helpers/testDb";
 const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
   mockAuth: vi.fn(async () => ({
     user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
-    organizationId: "test-org",
+    organizationId: "00000000-0000-4000-8000-0000000000a1",
     organizationName: "Test Org",
     role: "owner" as const
   })),
@@ -54,6 +57,13 @@ function embeddingsResponse(vectors: number[][]) {
   } as Response;
 }
 
+async function seedOrgs() {
+  await testDb.insert(organizations).values([
+    { id: ORG_A, name: "Org A", slug: "org-a" },
+    { id: ORG_B, name: "Org B", slug: "org-b" }
+  ]);
+}
+
 // PGlite boots a real WASM Postgres and runs the full migration set, which
 // costs ~1.5s — do that once per file, then just clear tables between
 // tests, rather than paying that cost for every single test.
@@ -65,10 +75,18 @@ beforeEach(async () => {
   resetRateLimiterForTests();
   __setDbForTests(testDb);
   mockAuth.mockClear();
+  mockAuth.mockResolvedValue({
+    user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
+    organizationId: ORG_A,
+    organizationName: "Org A",
+    role: "owner" as const
+  });
   mockGetOrgProviderKey.mockReset();
   mockGetOrgProviderKey.mockResolvedValue(undefined);
   await testDb.delete(documentChunks);
   await testDb.delete(documents);
+  await testDb.delete(organizations);
+  await seedOrgs();
 });
 
 afterEach(() => {
@@ -100,8 +118,11 @@ describe("GET /api/knowledge", () => {
     expect(data.files).toEqual([]);
   });
 
-  it("lists documents that exist in the database", async () => {
-    await testDb.insert(documents).values({ name: "standards.md", content: "# Standards" });
+  it("lists only documents for the active organization", async () => {
+    await testDb.insert(documents).values([
+      { organizationId: ORG_A, name: "standards.md", content: "# Standards" },
+      { organizationId: ORG_B, name: "secret.md", content: "# Other tenant" }
+    ]);
 
     const res = await GET();
     const data = await res.json();
@@ -113,7 +134,7 @@ describe("GET /api/knowledge", () => {
 });
 
 describe("POST /api/knowledge - add", () => {
-  it("creates a document with a trimmed name", async () => {
+  it("creates a document with a trimmed name scoped to the org", async () => {
     const res = await POST(postRequest({ action: "add", name: "  notes.md  ", content: "hi" }));
     const data = await res.json();
 
@@ -121,7 +142,25 @@ describe("POST /api/knowledge - add", () => {
     expect(data.success).toBe(true);
 
     const rows = await testDb.select().from(documents);
-    expect(rows.map((r) => r.name)).toEqual(["notes.md"]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("notes.md");
+    expect(rows[0].organizationId).toBe(ORG_A);
+  });
+
+  it("allows the same filename in two different organizations", async () => {
+    await POST(postRequest({ action: "add", name: "shared.md", content: "org-a copy" }));
+
+    mockAuth.mockResolvedValue({
+      user: { id: "user-b", email: "b@example.com", name: "B", isPlatformAdmin: false },
+      organizationId: ORG_B,
+      organizationName: "Org B",
+      role: "owner" as const
+    });
+    await POST(postRequest({ action: "add", name: "shared.md", content: "org-b copy" }));
+
+    const rows = await testDb.select().from(documents).orderBy(documents.organizationId);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.content).sort()).toEqual(["org-a copy", "org-b copy"]);
   });
 
   it("replaces content and chunks when the same name is added again", async () => {
@@ -129,7 +168,7 @@ describe("POST /api/knowledge - add", () => {
     const res = await POST(postRequest({ action: "add", name: "doc.md", content: "updated content" }));
     expect(res.status).toBe(200);
 
-    const rows = await testDb.select().from(documents);
+    const rows = await testDb.select().from(documents).where(eq(documents.organizationId, ORG_A));
     expect(rows).toHaveLength(1);
     expect(rows[0].content).toBe("updated content");
 
@@ -189,6 +228,21 @@ describe("POST /api/knowledge - delete", () => {
     expect(await testDb.select().from(documentChunks)).toHaveLength(0);
   });
 
+  it("does not delete another organization's document of the same name", async () => {
+    await testDb.insert(documents).values({
+      organizationId: ORG_B,
+      name: "doc.md",
+      content: "tenant B secret"
+    });
+
+    const res = await POST(postRequest({ action: "delete", name: "doc.md" }));
+    expect(res.status).toBe(404);
+
+    const remaining = await testDb.select().from(documents);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].organizationId).toBe(ORG_B);
+  });
+
   it("returns 404 for a document that does not exist", async () => {
     const res = await POST(postRequest({ action: "delete", name: "missing.md" }));
     expect(res.status).toBe(404);
@@ -206,6 +260,20 @@ describe("POST /api/knowledge - search (keyword fallback)", () => {
     expect(data.success).toBe(true);
     expect(data.matches[0].filename).toBe("a.md");
     expect(data.matches[0].relevance).toBeGreaterThan(data.matches[1].relevance);
+  });
+
+  it("does not return another organization's documents", async () => {
+    await testDb.insert(documents).values({
+      organizationId: ORG_B,
+      name: "leak.md",
+      content: "testing secret from other tenant"
+    });
+    await POST(postRequest({ action: "add", name: "mine.md", content: "testing once" }));
+
+    const res = await POST(postRequest({ action: "search", query: "testing" }));
+    const data = await res.json();
+
+    expect(data.matches.map((m: { filename: string }) => m.filename)).toEqual(["mine.md"]);
   });
 
   it("does not throw on a query containing regex metacharacters", async () => {

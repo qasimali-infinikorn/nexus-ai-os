@@ -36,11 +36,12 @@ That's it — no seed data or additional configuration needed.
 
 ```
 documents
-  id          uuid primary key
-  name        text, unique
-  content     text
-  created_at  timestamptz
-  updated_at  timestamptz
+  id               uuid primary key
+  organization_id  uuid -> organizations.id, on delete cascade
+  name             text, unique per organization
+  content          text
+  created_at       timestamptz
+  updated_at       timestamptz
 
 document_chunks
   id            uuid primary key
@@ -51,6 +52,8 @@ document_chunks
   created_at    timestamptz
 ```
 
+Documents are **tenant-scoped**. List / add / delete / search only see rows
+for `session.organizationId`. The same filename may exist in two orgs.
 `embedding` is nullable: chunks are always stored, but the vector column is
 only populated when the caller supplies an embedding-provider key on the
 `add` request (see [`ARCHITECTURE.md`](./ARCHITECTURE.md#knowledge-base--rag-appapiknowledgerouteets)).

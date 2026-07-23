@@ -108,34 +108,29 @@ state; each call is a single stateless system+user prompt round trip.
 
 ## Knowledge Base / RAG (`app/api/knowledge/route.ts`)
 
-Documents are rows in Postgres (`documents`, `document_chunks` —
-`lib/db/schema.ts`), not files on disk. This replaced an earlier
-filesystem-backed implementation that didn't work on Vercel (serverless
-functions there have a read-only filesystem outside ephemeral `/tmp`,
-confirmed live as `ENOENT: ... mkdir '/var/task/knowledge'`); Postgres has no
-such constraint.
+Documents are **organization-scoped** rows in Postgres (`documents`,
+`document_chunks` — `lib/db/schema.ts`), not files on disk. This replaced an
+earlier filesystem-backed implementation that didn't work on Vercel
+(serverless functions there have a read-only filesystem outside ephemeral
+`/tmp`, confirmed live as `ENOENT: ... mkdir '/var/task/knowledge'`); Postgres
+has no such constraint. Every list / add / delete / search filters on
+`session.organizationId` — tenants never share a global document table.
 
 - `POST { action: "add", name, content }` upserts a `documents` row (unique
-  on `name`), then re-chunks `content` via `lib/chunk.ts` (paragraph-aware,
-  ~1000 chars/chunk) into `document_chunks`, replacing any previous chunks
-  for that document.
-- **Two search modes**, chosen per-request by whether the caller supplies
-  an `embed: { provider: "openai", key }` field:
-  - **No `embed`** (default, matches the original behavior): keyword search
-    over whole-document `content` — literal (regex-escaped) term-occurrence
-    counting, same relevance scoring as before.
-  - **With `embed`**: semantic search. The query is embedded via
-    `lib/embeddings.ts` (OpenAI `text-embedding-3-small`, 1536 dims) and
-    matched against `document_chunks.embedding` using pgvector cosine
-    distance (`drizzle-orm`'s `cosineDistance`), returning the closest
-    chunks across all documents.
-  - Chunks are stored with a `null` embedding when no `embed` key is given
-    at write time — the keyword fallback still works over the full document
-    content regardless, only semantic search needs embeddings to exist.
-- **Not yet wired into the UI**: `components/knowledge-base.tsx` doesn't
-  send `embed` today, so the dashboard always uses keyword search. Semantic
-  search is available at the API level; surfacing an embedding-key input in
-  the Knowledge Base tab is a follow-up, not done here.
+  on `(organization_id, name)`), then re-chunks `content` via `lib/chunk.ts`
+  (paragraph-aware, ~1000 chars/chunk) into `document_chunks`, replacing any
+  previous chunks for that document.
+- **Two search modes** (`mode: "keyword" | "semantic"`):
+  - **Keyword** (default): term-occurrence counting over this org's
+    whole-document `content` (regex-escaped).
+  - **Semantic**: query embedded via `lib/embeddings.ts` (OpenAI
+    `text-embedding-3-small`, 1536 dims) using the org OpenAI key from
+    Settings → Integrations; matched against this org's
+    `document_chunks.embedding` with pgvector cosine distance.
+  - Chunks are stored with a `null` embedding when no org OpenAI key exists
+    at write time — keyword search still works; semantic needs embeddings.
+- Documents UI (`/documents`) exposes Keyword / Semantic toggle when
+  `semanticAvailable` is true.
 - Requires `DATABASE_URL` to be set (see [`DATABASE.md`](./DATABASE.md)) —
   `getDb()` throws a clear error if it isn't, rather than the route crashing
   at import time.

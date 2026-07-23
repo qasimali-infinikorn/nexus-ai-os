@@ -24,7 +24,7 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 ## Migration
 
 ```bash
-npm run db:migrate   # through 0012_project_task_external
+npm run db:migrate   # through 0013_documents_org_scope
 ```
 
 ### Review + Kanban webhooks

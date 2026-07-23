@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cosineDistance, eq, isNotNull } from "drizzle-orm";
+import { and, cosineDistance, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { documentChunks, documents } from "@/lib/db/schema";
 import { chunkText } from "@/lib/chunk";
@@ -53,7 +53,7 @@ async function resolveOpenAiKey(organizationId: string): Promise<string | undefi
   return getOrgProviderKey(organizationId, "openai");
 }
 
-// GET: List all documents + whether semantic search is available for this org
+// GET: List org documents + whether semantic search is available
 export async function GET() {
   const session = await requireSession();
   if (session instanceof NextResponse) return session;
@@ -64,7 +64,11 @@ export async function GET() {
   try {
     const db = getDb();
     const [rows, openaiKey] = await Promise.all([
-      db.select().from(documents).orderBy(documents.name),
+      db
+        .select()
+        .from(documents)
+        .where(eq(documents.organizationId, session.organizationId))
+        .orderBy(documents.name),
       resolveOpenAiKey(session.organizationId)
     ]);
 
@@ -84,7 +88,7 @@ export async function GET() {
   }
 }
 
-// POST: Handles add file, delete file, and query search
+// POST: Handles add file, delete file, and query search (all org-scoped)
 export async function POST(req: NextRequest) {
   const session = await requireSession();
   if (session instanceof NextResponse) return session;
@@ -96,6 +100,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const db = getDb();
+    const orgId = session.organizationId;
 
     if (action === "add") {
       const { name, content } = body;
@@ -116,9 +121,9 @@ export async function POST(req: NextRequest) {
 
       const [doc] = await db
         .insert(documents)
-        .values({ name: trimmedName, content })
+        .values({ organizationId: orgId, name: trimmedName, content })
         .onConflictDoUpdate({
-          target: documents.name,
+          target: [documents.organizationId, documents.name],
           set: { content, updatedAt: new Date() }
         })
         .returning();
@@ -131,7 +136,7 @@ export async function POST(req: NextRequest) {
       if (chunks.length > 0) {
         // Default: embed when the org has an OpenAI key. `embed: false` skips.
         const wantEmbed = body.embed !== false;
-        const openaiKey = wantEmbed ? await resolveOpenAiKey(session.organizationId) : undefined;
+        const openaiKey = wantEmbed ? await resolveOpenAiKey(orgId) : undefined;
         const embeddings = openaiKey ? await getEmbeddings("openai", openaiKey, chunks) : [];
         embedded = embeddings.length > 0;
 
@@ -158,7 +163,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: "Filename is required" }, { status: 400 });
       }
 
-      const deleted = await db.delete(documents).where(eq(documents.name, name.trim())).returning();
+      const deleted = await db
+        .delete(documents)
+        .where(and(eq(documents.organizationId, orgId), eq(documents.name, name.trim())))
+        .returning();
       if (deleted.length === 0) {
         return NextResponse.json({ success: false, error: "File not found" }, { status: 404 });
       }
@@ -181,7 +189,7 @@ export async function POST(req: NextRequest) {
       const mode = body.mode === "semantic" ? "semantic" : "keyword";
 
       if (mode === "semantic") {
-        const openaiKey = await resolveOpenAiKey(session.organizationId);
+        const openaiKey = await resolveOpenAiKey(orgId);
         if (!openaiKey) {
           return NextResponse.json(
             {
@@ -200,7 +208,7 @@ export async function POST(req: NextRequest) {
           .select({ filename: documents.name, content: documentChunks.content, distance })
           .from(documentChunks)
           .innerJoin(documents, eq(documentChunks.documentId, documents.id))
-          .where(isNotNull(documentChunks.embedding))
+          .where(and(eq(documents.organizationId, orgId), isNotNull(documentChunks.embedding)))
           .orderBy(distance)
           .limit(10);
 
@@ -231,8 +239,8 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Keyword-search fallback over whole-document content.
-      const rows = await db.select().from(documents);
+      // Keyword-search fallback over this org's document content.
+      const rows = await db.select().from(documents).where(eq(documents.organizationId, orgId));
       const matches: { filename: string; relevance: number; snippet: string }[] = [];
       let combinedContext = "";
 
