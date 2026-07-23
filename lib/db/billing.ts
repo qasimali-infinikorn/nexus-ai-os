@@ -171,11 +171,27 @@ export async function getPlatformBillingStats(): Promise<{
   };
 }
 
-export function formatUsdCents(cents: number): string {
+/** Tenant Settings → Billing: invoices for one organization. */
+export async function listOrgBillingInvoices(
+  organizationId: string,
+  limit = 20
+): Promise<BillingInvoice[]> {
+  const db = getDb();
+  const capped = Math.min(Math.max(limit, 1), 100);
+  return db
+    .select()
+    .from(billingInvoices)
+    .where(eq(billingInvoices.organizationId, organizationId))
+    .orderBy(desc(billingInvoices.createdAt))
+    .limit(capped);
+}
+
+export function formatUsdCents(cents: number, fractionDigits = 0): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits
   }).format(cents / 100);
 }
 

@@ -72,5 +72,6 @@ describe("stripe helpers", () => {
   it("formats USD cents without inventing decimals", () => {
     expect(formatUsdCents(0)).toBe("$0");
     expect(formatUsdCents(12_500)).toBe("$125");
+    expect(formatUsdCents(12_599, 2)).toBe("$125.99");
   });
 });

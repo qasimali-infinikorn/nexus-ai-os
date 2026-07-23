@@ -53,18 +53,3 @@ export const activeSessions = [
   { id: "s2", device: "iPhone 16 · Nexus app", where: "San Francisco, US · 2 h ago", current: false },
   { id: "s3", device: "Linux · Firefox", where: "Austin, US · yesterday", current: false }
 ];
-
-export const billing = {
-  planName: "Enterprise plan",
-  price: "$4,200",
-  cadence: "/ month",
-  renews: "Renews Aug 1, 2026",
-  seatsTotal: 42,
-  seatsAssigned: 34,
-  invoices: [
-    { id: "INV-2026-07", date: "July 1, 2026", amount: "$4,200.00", status: "Paid" },
-    { id: "INV-2026-06", date: "June 1, 2026", amount: "$4,050.00", status: "Paid" },
-    { id: "INV-2026-05", date: "May 1, 2026", amount: "$3,900.00", status: "Paid" },
-    { id: "INV-2026-04", date: "April 1, 2026", amount: "$3,900.00", status: "Paid" }
-  ]
-};
