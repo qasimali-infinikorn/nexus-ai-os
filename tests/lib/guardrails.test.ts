@@ -71,4 +71,14 @@ describe("guardrail harness", () => {
     expect(jira).toContain("JIRA_WEBHOOK_SECRET");
     expect(jira).toContain("organizationId");
   });
+
+  it("documents Stripe signature verification on billing webhook", () => {
+    const route = fs.readFileSync(
+      path.join(process.cwd(), "app/api/webhooks/stripe/route.ts"),
+      "utf8"
+    );
+    expect(route).toContain("STRIPE_WEBHOOK_SECRET");
+    expect(route).toContain("verifyStripeSignature");
+    expect(route).toContain("stripe-signature");
+  });
 });

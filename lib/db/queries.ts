@@ -218,6 +218,7 @@ export type TenantAdminRow = {
   planTier: OrganizationPlanTier;
   status: OrganizationStatus;
   seatCount: number;
+  mrrCents: number | null;
   createdAt: Date;
   lastActiveAt: Date | null;
 };
@@ -234,6 +235,7 @@ export async function listTenantsForAdmin(filter: TenantAdminFilter = "all"): Pr
       slug: organizations.slug,
       planTier: organizations.planTier,
       status: organizations.status,
+      mrrCents: organizations.mrrCents,
       createdAt: organizations.createdAt,
       seatCount: sql<number>`count(distinct ${memberships.id})::int`,
       lastActiveAt: sql<Date | null>`max(${auditLog.createdAt})`
@@ -322,7 +324,7 @@ export async function createOrganizationAsAdmin(params: {
  * (see schema comment). Prefer action names prefixed with `platform.`.
  */
 export async function writePlatformAuditEvent(entry: {
-  actorUserId: string;
+  actorUserId?: string | null;
   action: string;
   targetType?: string;
   targetId?: string;
@@ -330,7 +332,7 @@ export async function writePlatformAuditEvent(entry: {
 }): Promise<void> {
   await writeAuditLog({
     organizationId: null,
-    actorUserId: entry.actorUserId,
+    actorUserId: entry.actorUserId ?? null,
     action: entry.action,
     targetType: entry.targetType,
     targetId: entry.targetId,

@@ -77,6 +77,19 @@ Atlassian Jira webhook → **Reviews** (issue updates) / **Mentions** (comments)
   `JIRA_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
 - Optional `JIRA_BASE_URL` for browse links (`{base}/browse/KEY`)
 
+## `POST /api/webhooks/stripe`
+
+Stripe → Superadmin billing: upserts `billing_invoices` and updates org
+`mrr_cents` / subscription status. **No session** — verify
+`Stripe-Signature` with `STRIPE_WEBHOOK_SECRET` (returns `503` if unset,
+`401` on bad signature, `429` when rate-limited).
+
+- Subscribe to `invoice.*` and `customer.subscription.*`
+- Resolve org via Customer/subscription metadata `organizationId`, or a
+  prior `organizations.stripe_customer_id` link (tenant detail form)
+- Events that cannot resolve an org return `{ ok: true, ignored: true }`
+- Dollar KPIs stay empty until real webhook data arrives — never invented
+
 ## `POST /api/orchestrate`
 
 Streams newline-delimited JSON (one `JSON.stringify(event) + "\n"` per

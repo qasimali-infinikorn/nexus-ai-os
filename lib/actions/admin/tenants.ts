@@ -10,7 +10,7 @@ import {
   setOrganizationStatus,
   writePlatformAuditEvent
 } from "@/lib/db/queries";
-import { ORGANIZATION_PLAN_TIERS, ORGANIZATION_STATUSES } from "@/lib/db/schema";
+import { ORGANIZATION_PLAN_TIERS } from "@/lib/db/schema";
 
 export type AdminFormState = { error?: string; success?: string; invitePath?: string } | undefined;
 
@@ -123,4 +123,47 @@ export async function createTenantAction(
   };
 }
 
-void ORGANIZATION_STATUSES; // keep enum import warm for future status edits
+const stripeLinkSchema = z.object({
+  organizationId: z.string().uuid(),
+  stripeCustomerId: z
+    .string()
+    .trim()
+    .max(120)
+    .refine((v) => v === "" || /^cus_[a-zA-Z0-9]+$/.test(v), {
+      message: "Use a Stripe customer id (cus_…)."
+    })
+});
+
+export async function linkTenantStripeCustomerAction(
+  _prev: AdminFormState,
+  formData: FormData
+): Promise<AdminFormState> {
+  const { user } = await assertPlatformAdmin();
+  const parsed = stripeLinkSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+
+  const org = await getOrganizationById(parsed.data.organizationId);
+  if (!org) return { error: "Organization not found." };
+
+  const { linkOrganizationStripeIds } = await import("@/lib/db/billing");
+  await linkOrganizationStripeIds({
+    organizationId: org.id,
+    stripeCustomerId: parsed.data.stripeCustomerId || null
+  });
+
+  await writePlatformAuditEvent({
+    actorUserId: user.id,
+    action: "platform.billing.link_customer",
+    targetType: "organization",
+    targetId: org.id,
+    metadata: { stripeCustomerId: parsed.data.stripeCustomerId || null }
+  });
+
+  revalidateAdminTenantPaths(org.id);
+  revalidatePath("/admin/billing");
+  return {
+    success: parsed.data.stripeCustomerId
+      ? "Stripe customer linked."
+      : "Stripe customer cleared."
+  };
+}

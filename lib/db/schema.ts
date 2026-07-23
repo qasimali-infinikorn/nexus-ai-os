@@ -78,9 +78,16 @@ export const organizations = pgTable(
     slug: text("slug").notNull(),
     planTier: text("plan_tier", { enum: ORGANIZATION_PLAN_TIERS }).notNull().default("trial"),
     status: text("status", { enum: ORGANIZATION_STATUSES }).notNull().default("trial"),
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    /** Monthly recurring revenue in cents from the active Stripe subscription. */
+    mrrCents: integer("mrr_cents"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [uniqueIndex("organizations_slug_unique_idx").on(table.slug)]
+  (table) => [
+    uniqueIndex("organizations_slug_unique_idx").on(table.slug),
+    uniqueIndex("organizations_stripe_customer_unique_idx").on(table.stripeCustomerId)
+  ]
 );
 
 export const users = pgTable(
@@ -613,3 +620,33 @@ export const platformIncidents = pgTable(
 );
 
 export type PlatformIncident = typeof platformIncidents.$inferSelect;
+
+export const BILLING_INVOICE_STATUSES = ["draft", "open", "paid", "void", "uncollectible"] as const;
+export type BillingInvoiceStatus = (typeof BILLING_INVOICE_STATUSES)[number];
+
+export const billingInvoices = pgTable(
+  "billing_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    stripeInvoiceId: text("stripe_invoice_id").notNull(),
+    amountCents: integer("amount_cents").notNull().default(0),
+    currency: text("currency").notNull().default("usd"),
+    status: text("status", { enum: BILLING_INVOICE_STATUSES }).notNull().default("open"),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("billing_invoices_stripe_id_unique_idx").on(table.stripeInvoiceId),
+    index("billing_invoices_org_created_idx").on(table.organizationId, table.createdAt),
+    index("billing_invoices_status_idx").on(table.status)
+  ]
+);
+
+export type BillingInvoice = typeof billingInvoices.$inferSelect;

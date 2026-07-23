@@ -8,6 +8,7 @@ import { Pill } from "@/components/workspace/ui";
 import { AddTenantDialog } from "@/components/admin/add-tenant-dialog";
 import { TenantStatusForm } from "@/components/admin/tenant-status-form";
 import { formatAdminDate, PLAN_LABELS, STATUS_LABELS, statusTone } from "@/lib/workspace/admin-ui";
+import { formatUsdCents } from "@/lib/db/billing";
 
 const TABS: { id: TenantAdminFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -101,7 +102,9 @@ export default async function AdminTenantsPage({
                   <td>
                     <Pill tone={statusTone(tenant.status)}>{STATUS_LABELS[tenant.status]}</Pill>
                   </td>
-                  <td className="dim">—</td>
+                  <td className="dim">
+                    {tenant.mrrCents != null ? formatUsdCents(tenant.mrrCents) : "—"}
+                  </td>
                   <td className="dim">{formatAdminDate(tenant.lastActiveAt ?? tenant.createdAt)}</td>
                   <td>
                     <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>

@@ -135,6 +135,8 @@ Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 | Webhook auth | `POST /api/webhooks/devops` | `WEBHOOK_SECRET` via Bearer or `x-nexus-webhook-secret` (timing-safe) |
 | Webhook auth | `POST /api/webhooks/github` | `X-Hub-Signature-256` + `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`) |
 | Webhook auth | `POST /api/webhooks/jira` | Bearer / header + `JIRA_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`) |
+| Webhook auth | `POST /api/webhooks/stripe` | `Stripe-Signature` + `STRIPE_WEBHOOK_SECRET` (timing-safe HMAC) |
+| Rate limit | `POST /api/webhooks/stripe` | 60 req/min per client IP |
 | Calendar OAuth | Google / Microsoft Calendar connect | Separate from Auth.js; HMAC state (`AUTH_SECRET`); encrypted refresh tokens |
 | Email notify | Resend API | `RESEND_API_KEY` + `EMAIL_FROM`; skipped when unset |
 | Slack notify | Incoming webhook | Per-user URL in `user_settings.delivery`; must be `hooks.slack.com` |

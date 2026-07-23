@@ -7,7 +7,9 @@ import { listTenantFeatureFlagStates } from "@/lib/db/feature-flags";
 import { Card, CardHead, Pill } from "@/components/workspace/ui";
 import { TenantStatusForm } from "@/components/admin/tenant-status-form";
 import { TenantFlagOverrides } from "@/components/admin/tenant-flag-overrides";
+import { LinkStripeCustomerForm } from "@/components/admin/link-stripe-customer-form";
 import { formatAdminDate, PLAN_LABELS, STATUS_LABELS, statusTone } from "@/lib/workspace/admin-ui";
+import { formatUsdCents } from "@/lib/db/billing";
 
 export default async function AdminTenantDetailPage({
   params
@@ -59,10 +61,37 @@ export default async function AdminTenantDetailPage({
           <p style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>{members.length}</p>
         </Card>
         <Card>
-          <CardHead title="Pending invites" />
-          <p style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>{pendingInvites}</p>
+          <CardHead title="MRR" />
+          <p style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>
+            {organization.mrrCents != null ? formatUsdCents(organization.mrrCents) : "—"}
+          </p>
         </Card>
       </div>
+
+      <Card>
+        <CardHead
+          title="Stripe"
+          sub={
+            organization.stripeCustomerId
+              ? `Linked · ${organization.stripeCustomerId}`
+              : "Link a Stripe customer to attribute webhook invoices"
+          }
+          bordered
+        />
+        <LinkStripeCustomerForm
+          organizationId={organization.id}
+          initialCustomerId={organization.stripeCustomerId}
+        />
+      </Card>
+
+      <Card className="table-scroll admin-table-card">
+        <div style={{ padding: "1rem 1.25rem 0" }}>
+          <CardHead title="Pending invites" sub={`${pendingInvites} outstanding`} bordered />
+        </div>
+        <p className="dim" style={{ padding: "0 1.25rem 1.25rem", margin: 0 }}>
+          {pendingInvites === 0 ? "No pending invites." : `${pendingInvites} invite(s) waiting to be accepted.`}
+        </p>
+      </Card>
 
       <Card className="table-scroll admin-table-card">
         <div style={{ padding: "1rem 1.25rem 0" }}>

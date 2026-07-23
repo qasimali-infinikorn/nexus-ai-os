@@ -122,9 +122,9 @@ Mockup seed flags (parity with design):
 
 ### 5.4 Billing
 
-- Stats: MRR, ARR, failed payments, trials converting
-- Table of recent invoices / payment failures (Stripe webhook → DB in 3b)
-- Phase 3a: read-only mock metrics gated behind `DEMO` or empty states
+- Stats: MRR, ARR, open/failed invoices (from Stripe sync), trials (live plan mix)
+- Table of recent invoices / payment failures (`POST /api/webhooks/stripe` → `billing_invoices`)
+- Empty `$` KPIs until webhook data exists — never invent revenue
 
 ### 5.5 System Status
 
@@ -188,7 +188,8 @@ Seeded keys: `ai-workspace`, `live-meetings`, `proposal-studio`, `byo-model`, `s
 - [x] System status page (health checks against `/api` + DB ping)
 - [x] Nav badges for incidents / tenant count
 
-Billing shows live plan mix + trial counts but never invents MRR. Status runs
+Billing shows live plan mix + trial counts always; MRR/ARR/invoices populate
+from Stripe (`STRIPE_*` env + webhook). Status runs
 `runPlatformHealthChecks()` (also exposed at public `GET /api/health`). Nav
 badges: tenant count on Tenants; incident count on System Status when > 0.
 
@@ -199,7 +200,7 @@ badges: tenant count on Tenants; incident count on System Status when > 0.
 - [x] Admin-only command palette entries (`⌘K` / Ctrl+K in Superadmin)
 
 Admin theme: **force dark** via `data-theme="dark"` on `.admin-root` (open decision #3).
-MRR chart is an empty shell (zeros + overlay) — never invents revenue.
+Paid-volume chart uses synced invoice totals; empty shell until Stripe data exists.
 
 ---
 
@@ -207,10 +208,11 @@ MRR chart is an empty shell (zeros + overlay) — never invents revenue.
 
 Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
 
-- Stripe invoice sync / real MRR
+- ~~Stripe invoice sync / real MRR~~ **done** (`/api/webhooks/stripe`, tenant Stripe link, live Billing KPIs)
 - ~~Per-tenant flag override UI on tenant detail~~ **done** (`/admin/tenants/[orgId]`)
 - ~~Manual incident banners / on-call workflow~~ **done** (banners + resolve on `/admin/status`; full on-call paging still later)
 - Impersonation (explicitly deferred)
+- Optional: agent-run ledger for Overview “Agent runs (7d)”
 
 ## 8. Out of scope (explicit)
 
@@ -234,7 +236,8 @@ Phases 3.0–3.4 are implemented. Remaining backlog (not blocking portal ship):
 ## 10. Open decisions
 
 1. **Billing source**: Stripe from day one vs. manual plan fields until revenue is real?
-   → **Decided for 3.3a**: honest empty $ KPIs; live plan_tier mix only. Stripe sync later.
+   → **Decided**: honest empty $ KPIs until Stripe webhook sync; live `plan_tier` mix always.
+     Stripe Customer metadata `organizationId` or admin-linked `stripe_customer_id`.
 2. **Impersonation**: ship in 3.1 or permanently defer?
    → **Deferred** (high risk; not in Phase 3).
 3. **Admin theme**: force dark, or respect user theme toggle?

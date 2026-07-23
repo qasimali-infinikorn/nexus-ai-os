@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Building2, AlertTriangle, Bot, DollarSign } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth/require-platform-admin";
 import { getPlatformOverviewStats } from "@/lib/db/queries";
+import { formatUsdCents, getPlatformBillingStats } from "@/lib/db/billing";
 import { runPlatformHealthChecks } from "@/lib/platform/health";
 import { Card, CardHead, DemoNotice, Pill } from "@/components/workspace/ui";
 import { AreaChart, Donut } from "@/components/workspace/charts";
@@ -14,25 +15,34 @@ const PLAN_COLORS: Record<string, string> = {
   enterprise: "#10b981"
 };
 
-/** Flat series so the chart shell renders without inventing revenue. */
-const EMPTY_MRR_SERIES = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const EMPTY_MRR_LABELS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
-
 export default async function AdminOverviewPage() {
   await requirePlatformAdmin();
-  const [stats, health] = await Promise.all([getPlatformOverviewStats(), runPlatformHealthChecks()]);
+  const [stats, health, billing] = await Promise.all([
+    getPlatformOverviewStats(),
+    runPlatformHealthChecks(),
+    getPlatformBillingStats()
+  ]);
   const planTotal = stats.planMix.reduce((sum, row) => sum + row.count, 0) || 1;
   const donutSegments = stats.planMix.map((row) => ({
     label: PLAN_LABELS[row.plan as keyof typeof PLAN_LABELS] ?? row.plan,
     value: row.count,
     color: PLAN_COLORS[row.plan] ?? "#64748b"
   }));
+  const chartPoints = billing.hasBillingData
+    ? billing.mrrSeries.map((p) => p.cents / 100)
+    : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const chartLabels = billing.hasBillingData
+    ? billing.mrrSeries.map((p) => p.label)
+    : ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
   return (
     <div className="stack-lg">
       <DemoNotice>
-        Tenant counts and system health are live. Platform MRR and agent runs stay empty until billing
-        sync and a run ledger exist — they are not invented here.
+        Tenant counts and system health are live.
+        {billing.hasBillingData
+          ? " Platform MRR reflects synced Stripe subscription MRR."
+          : " Platform MRR stays empty until Stripe webhook sync — never invented."}{" "}
+        Agent runs stay empty until a run ledger exists.
       </DemoNotice>
 
       <div className="grid-4 admin-kpi-row">
@@ -43,9 +53,9 @@ export default async function AdminOverviewPage() {
             </span>
             <DollarSign size={16} className="dim" aria-hidden />
           </div>
-          <p className="stat-value">—</p>
+          <p className="stat-value">{billing.hasBillingData ? formatUsdCents(billing.mrrCents) : "—"}</p>
           <p className="dim" style={{ fontSize: "0.8rem" }}>
-            Billing not connected
+            {billing.hasBillingData ? "From Stripe sync" : "Billing not connected"}
           </p>
         </Link>
 
@@ -95,23 +105,39 @@ export default async function AdminOverviewPage() {
         <Card>
           <CardHead
             title="Platform MRR (12 mo)"
-            sub="Chart shell only — no fabricated series until billing sync"
+            sub={
+              billing.hasBillingData
+                ? "Paid invoice volume by month"
+                : "Chart shell only — no fabricated series until billing sync"
+            }
             action={
               <Link href="/admin/billing" className="btn-ghost" style={{ fontSize: "0.8rem" }}>
                 Billing
               </Link>
             }
           />
-          <div className="admin-chart-empty">
-            <AreaChart
-              points={EMPTY_MRR_SERIES}
-              labels={EMPTY_MRR_LABELS}
-              height={180}
-              color="#64748b"
-              id="admin-mrr-empty"
-            />
-            <p className="admin-chart-empty-label">No billing data connected</p>
-          </div>
+          {billing.hasBillingData ? (
+            <div style={{ padding: "0 1.25rem 1.25rem" }}>
+              <AreaChart
+                points={chartPoints}
+                labels={chartLabels}
+                height={180}
+                color="#10b981"
+                id="admin-mrr-live"
+              />
+            </div>
+          ) : (
+            <div className="admin-chart-empty">
+              <AreaChart
+                points={chartPoints}
+                labels={chartLabels}
+                height={180}
+                color="#64748b"
+                id="admin-mrr-empty"
+              />
+              <p className="admin-chart-empty-label">No billing data connected</p>
+            </div>
+          )}
         </Card>
 
         <Card>
