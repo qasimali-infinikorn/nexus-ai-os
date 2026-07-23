@@ -95,8 +95,9 @@ See `docs/plans/ADMIN_PORTAL.md` for the Phase 3 console plan.
 - No org switcher for users with multiple memberships (uses the first one).
 - Invitations aren't emailed — the link must be shared manually.
 - No password reset flow.
-- No rate limiting on login attempts specifically (the general per-user
-  rate limits in `lib/rate-limit.ts` don't yet cover `/api/auth/*`).
+- ~~No rate limiting on login attempts~~ **done** — failed credentials are
+  capped per IP (`LOGIN_IP_LIMIT`) and per email (`LOGIN_EMAIL_LIMIT`) over
+  a 15-minute window in `lib/rate-limit.ts` / `loginAction`.
 - No dedicated integration test drives `signIn()`/`signOut()` end-to-end
   (Auth.js's Credentials flow expects Next's real request-scoped
   `cookies()`, which isn't available when calling route handlers directly

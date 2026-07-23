@@ -13,7 +13,14 @@ import {
   MAX_PROMPT_LENGTH,
   isValidProvider
 } from "@/lib/validation";
-import { rateLimit, resetRateLimiterForTests } from "@/lib/rate-limit";
+import {
+  assertLoginAttemptAllowed,
+  LOGIN_EMAIL_LIMIT,
+  LOGIN_IP_LIMIT,
+  rateLimit,
+  recordFailedLoginAttempt,
+  resetRateLimiterForTests
+} from "@/lib/rate-limit";
 import fs from "fs";
 import path from "path";
 
@@ -42,6 +49,20 @@ describe("guardrail harness", () => {
       expect(rateLimit("knowledge:write:user-b", 30, 60_000).allowed).toBe(true);
     }
     expect(rateLimit("knowledge:write:user-b", 30, 60_000).allowed).toBe(false);
+  });
+
+  it("enforces login failed-attempt budgets (IP + email)", () => {
+    resetRateLimiterForTests();
+    for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
+      recordFailedLoginAttempt("10.0.0.1", "locked@example.com");
+    }
+    expect(assertLoginAttemptAllowed("10.0.0.1", "locked@example.com").ok).toBe(false);
+
+    resetRateLimiterForTests();
+    for (let i = 0; i < LOGIN_IP_LIMIT; i++) {
+      recordFailedLoginAttempt("10.0.0.2", `u${i}@example.com`);
+    }
+    expect(assertLoginAttemptAllowed("10.0.0.2", "anyone@example.com").ok).toBe(false);
   });
 
   it("keeps webhook and health routes public in proxy.ts", () => {
