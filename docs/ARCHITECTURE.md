@@ -102,7 +102,7 @@ state; each call is a single stateless system+user prompt round trip.
 | `architecture` | Architecture |
 | `proposal` | Proposal Studio |
 | `research` | Research Center |
-| `documentation` | (defined, not yet wired to a UI page) |
+| `documentation` | Documentation (`/documentation`) — README, ADR, API, runbook, etc. |
 | `client_meeting` | Meetings page + AI Workspace prep links (Phase 2) |
 | `knowledge` | Knowledge Base (RAG) |
 

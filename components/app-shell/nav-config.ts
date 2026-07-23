@@ -9,6 +9,7 @@ import {
   FolderGit,
   Search,
   FileText,
+  BookOpen,
   CalendarClock,
   Bell,
   Settings,
@@ -80,6 +81,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Research Center",
         icon: Search,
         description: "Compare stacks, plan migrations, and gauge enterprise readiness."
+      },
+      {
+        href: "/documentation",
+        label: "Documentation",
+        icon: BookOpen,
+        description: "Generate READMEs, ADRs, API docs, and runbooks with Doc Architect."
       },
       {
         href: "/proposal-studio",

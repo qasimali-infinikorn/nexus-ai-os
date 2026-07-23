@@ -21,7 +21,7 @@ const RUN_HREF: Record<string, string> = {
   research: "/research-center",
   knowledge: "/knowledge-base",
   client_meeting: "/meetings",
-  documentation: "/ai-workspace"
+  documentation: "/documentation"
 };
 
 function relativeTime(date: Date): string {
