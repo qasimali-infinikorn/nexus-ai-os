@@ -10,15 +10,22 @@ import { createTestDb } from "../helpers/testDb";
 // app/api/knowledge/route.ts) — mock it so these tests keep exercising the
 // document/search logic without standing up a real auth flow. See
 // tests/api/orchestrate.test.ts for why vi.hoisted() is required here.
-const { mockAuth } = vi.hoisted(() => ({
+const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
   mockAuth: vi.fn(async () => ({
     user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
     organizationId: "test-org",
     organizationName: "Test Org",
     role: "owner" as const
-  }))
+  })),
+  mockGetOrgProviderKey: vi.fn<(organizationId: string, provider: string) => Promise<string | undefined>>(
+    async () => undefined
+  )
 }));
 vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
+vi.mock("@/lib/db/queries", () => ({
+  getOrgProviderKey: (organizationId: string, provider: string) =>
+    mockGetOrgProviderKey(organizationId, provider)
+}));
 
 const { GET, POST } = await import("@/app/api/knowledge/route");
 
@@ -58,6 +65,8 @@ beforeEach(async () => {
   resetRateLimiterForTests();
   __setDbForTests(testDb);
   mockAuth.mockClear();
+  mockGetOrgProviderKey.mockReset();
+  mockGetOrgProviderKey.mockResolvedValue(undefined);
   await testDb.delete(documentChunks);
   await testDb.delete(documents);
 });
@@ -143,12 +152,11 @@ describe("POST /api/knowledge - add", () => {
     expect(res.status).toBe(400);
   });
 
-  it("computes and stores an embedding per chunk when an embed key is supplied", async () => {
+  it("computes and stores an embedding per chunk when the org has an OpenAI key", async () => {
+    mockGetOrgProviderKey.mockResolvedValue("sk-test");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(embeddingsResponse([oneHot(0)])));
 
-    const res = await POST(
-      postRequest({ action: "add", name: "doc.md", content: "short content", embed: { provider: "openai", key: "sk-test" } })
-    );
+    const res = await POST(postRequest({ action: "add", name: "doc.md", content: "short content" }));
     expect(res.status).toBe(200);
     expect(fetch).toHaveBeenCalledTimes(1);
 
@@ -157,7 +165,7 @@ describe("POST /api/knowledge - add", () => {
     expect(chunks[0].embedding).not.toBeNull();
   });
 
-  it("stores chunks without embeddings when no embed key is supplied", async () => {
+  it("stores chunks without embeddings when the org has no OpenAI key", async () => {
     vi.stubGlobal("fetch", vi.fn());
 
     await POST(postRequest({ action: "add", name: "doc.md", content: "short content" }));
@@ -218,6 +226,7 @@ describe("POST /api/knowledge - search (keyword fallback)", () => {
 
 describe("POST /api/knowledge - search (pgvector semantic search)", () => {
   it("ranks the chunk closest to the query embedding first", async () => {
+    mockGetOrgProviderKey.mockResolvedValue("sk-test");
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(embeddingsResponse([oneHot(0)])) // doc-a embedding
@@ -225,15 +234,26 @@ describe("POST /api/knowledge - search (pgvector semantic search)", () => {
       .mockResolvedValueOnce(embeddingsResponse([oneHot(0)])); // query embedding (matches doc-a)
     vi.stubGlobal("fetch", fetchMock);
 
-    await POST(postRequest({ action: "add", name: "doc-a.md", content: "alpha content", embed: { provider: "openai", key: "sk-test" } }));
-    await POST(postRequest({ action: "add", name: "doc-b.md", content: "beta content", embed: { provider: "openai", key: "sk-test" } }));
+    await POST(postRequest({ action: "add", name: "doc-a.md", content: "alpha content" }));
+    await POST(postRequest({ action: "add", name: "doc-b.md", content: "beta content" }));
 
-    const res = await POST(postRequest({ action: "search", query: "anything", embed: { provider: "openai", key: "sk-test" } }));
+    const res = await POST(
+      postRequest({ action: "search", query: "anything", mode: "semantic" })
+    );
     const data = await res.json();
 
     expect(res.status).toBe(200);
+    expect(data.mode).toBe("semantic");
     expect(data.matches[0].filename).toBe("doc-a.md");
     expect(data.matches[0].relevance).toBeGreaterThan(data.matches[1].relevance);
+  });
+
+  it("rejects semantic search when the org has no OpenAI key", async () => {
+    const res = await POST(postRequest({ action: "search", query: "x", mode: "semantic" }));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toMatch(/OpenAI/i);
   });
 });
 

@@ -12,19 +12,42 @@ interface KnowledgeFile {
   updatedAt: string;
 }
 
+type SearchMode = "keyword" | "semantic";
+
 export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps) {
   const [files, setFiles] = useState<KnowledgeFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [semanticAvailable, setSemanticAvailable] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
   const [searchResult, setSearchResult] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [lastMode, setLastMode] = useState<SearchMode | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [newFileContent, setNewFileContent] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+
+  const applyListPayload = useCallback((data: {
+    success?: boolean;
+    files?: KnowledgeFile[];
+    semanticAvailable?: boolean;
+    error?: string;
+  }) => {
+    if (data.success) {
+      setFiles(data.files || []);
+      setSemanticAvailable(Boolean(data.semanticAvailable));
+      setError("");
+      if (!data.semanticAvailable) {
+        setSearchMode((prev) => (prev === "semantic" ? "keyword" : prev));
+      }
+    } else {
+      setError(data.error || "Failed to load files.");
+    }
+  }, []);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
@@ -32,17 +55,13 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
     try {
       const response = await fetch("/api/knowledge");
       const data = await response.json();
-      if (data.success) {
-        setFiles(data.files || []);
-      } else {
-        setError(data.error || "Failed to load files.");
-      }
+      applyListPayload(data);
     } catch (err) {
       setError(errorMessage(err, "Failed to fetch files."));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyListPayload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +72,7 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
         const data = await response.json();
         if (cancelled) return;
         startTransition(() => {
-          if (data.success) {
-            setFiles(data.files || []);
-            setError("");
-          } else {
-            setError(data.error || "Failed to load files.");
-          }
+          applyListPayload(data);
         });
       } catch (err) {
         if (cancelled) return;
@@ -72,7 +86,7 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyListPayload]);
 
   const handleAddFile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,11 +150,14 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
     setSearchResult("");
     setError("");
 
+    const mode: SearchMode =
+      searchMode === "semantic" && semanticAvailable ? "semantic" : "keyword";
+
     try {
       const contextResponse = await fetch("/api/knowledge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "search", query: searchQuery })
+        body: JSON.stringify({ action: "search", query: searchQuery, mode })
       });
 
       const contextData = await contextResponse.json();
@@ -148,9 +165,12 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
         throw new Error(contextData.error || "Failed to retrieve local context.");
       }
 
+      setLastMode(contextData.mode === "semantic" ? "semantic" : "keyword");
+
       if (!contextData.context) {
         setSearchResult(
-          "No matching documents found. Add markdown files first, then ask again."
+          contextData.message ||
+            "No matching documents found. Add markdown files first, then ask again."
         );
         return;
       }
@@ -259,6 +279,11 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
                 required
               />
             </div>
+            <p className="form-hint" style={{ margin: 0 }}>
+              {semanticAvailable
+                ? "Embeddings are generated automatically when an OpenAI org key is configured."
+                : "Add an OpenAI key under Settings → Integrations to enable semantic indexing."}
+            </p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
                 type="button"
@@ -323,6 +348,40 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
         </div>
 
         <div className="form-group">
+          <span className="form-label" id="kb-search-mode-label">
+            Retrieval mode
+          </span>
+          <div className="segmented" role="group" aria-labelledby="kb-search-mode-label">
+            <button
+              type="button"
+              className={searchMode === "keyword" ? "active" : ""}
+              onClick={() => setSearchMode("keyword")}
+              disabled={isSearching}
+            >
+              Keyword
+            </button>
+            <button
+              type="button"
+              className={searchMode === "semantic" ? "active" : ""}
+              onClick={() => setSearchMode("semantic")}
+              disabled={isSearching || !semanticAvailable}
+              title={
+                semanticAvailable
+                  ? "pgvector cosine similarity over chunk embeddings"
+                  : "Configure an OpenAI key under Settings → Integrations"
+              }
+            >
+              Semantic
+            </button>
+          </div>
+          {!semanticAvailable ? (
+            <p className="form-hint" style={{ marginTop: 6 }}>
+              Semantic search needs an OpenAI org key (Settings → Integrations). Keyword search still works.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="form-group">
           <label className="form-label" htmlFor="kb-query">
             Question about internal standards or design records
           </label>
@@ -350,11 +409,23 @@ export default function KnowledgeBase({ provider, model, keys }: AgentPanelProps
         </div>
 
         {isSearching ? (
-          <StatusLine message="Searching the index and synthesizing an answer…" tone="live" />
+          <StatusLine
+            message={
+              searchMode === "semantic" && semanticAvailable
+                ? "Running semantic retrieval, then synthesizing an answer…"
+                : "Searching the index and synthesizing an answer…"
+            }
+            tone="live"
+          />
         ) : null}
 
         {searchResult ? (
           <OutputBlock>
+            {lastMode ? (
+              <p className="form-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+                Retrieved with <strong>{lastMode}</strong> search
+              </p>
+            ) : null}
             <Markdown content={searchResult} />
           </OutputBlock>
         ) : null}

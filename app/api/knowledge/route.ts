@@ -5,6 +5,7 @@ import { documentChunks, documents } from "@/lib/db/schema";
 import { chunkText } from "@/lib/chunk";
 import { getEmbeddings } from "@/lib/embeddings";
 import { auth } from "@/lib/auth";
+import { getOrgProviderKey } from "@/lib/db/queries";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   MAX_KNOWLEDGE_CONTENT_BYTES,
@@ -25,12 +26,15 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function requireSessionUserId(): Promise<string | NextResponse> {
+async function requireSession(): Promise<
+  | { userId: string; organizationId: string }
+  | NextResponse
+> {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id || !session.organizationId) {
     return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
   }
-  return session.user.id;
+  return { userId: session.user.id, organizationId: session.organizationId };
 }
 
 function checkRateLimit(userId: string, bucket: "read" | "write", limit: number): NextResponse | null {
@@ -44,31 +48,25 @@ function checkRateLimit(userId: string, bucket: "read" | "write", limit: number)
   return null;
 }
 
-// Optional embedding provider config accepted on "add"/"search" bodies to
-// opt into pgvector semantic search. Absent -> keyword search fallback.
-interface EmbedConfig {
-  provider: "openai";
-  key: string;
+/** Resolve OpenAI key for embeddings — org BYOK only (never trust client-supplied keys). */
+async function resolveOpenAiKey(organizationId: string): Promise<string | undefined> {
+  return getOrgProviderKey(organizationId, "openai");
 }
 
-function parseEmbedConfig(value: unknown): EmbedConfig | null {
-  if (!value || typeof value !== "object") return null;
-  const { provider, key } = value as Record<string, unknown>;
-  if (provider !== "openai" || !isNonEmptyString(key)) return null;
-  return { provider, key };
-}
-
-// GET: List all documents stored in the knowledge base
+// GET: List all documents + whether semantic search is available for this org
 export async function GET() {
-  const userId = await requireSessionUserId();
-  if (userId instanceof NextResponse) return userId;
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
-  const limited = checkRateLimit(userId, "read", READ_RATE_LIMIT);
+  const limited = checkRateLimit(session.userId, "read", READ_RATE_LIMIT);
   if (limited) return limited;
 
   try {
     const db = getDb();
-    const rows = await db.select().from(documents).orderBy(documents.name);
+    const [rows, openaiKey] = await Promise.all([
+      db.select().from(documents).orderBy(documents.name),
+      resolveOpenAiKey(session.organizationId)
+    ]);
 
     const fileList = rows.map((doc) => ({
       name: doc.name,
@@ -76,7 +74,11 @@ export async function GET() {
       updatedAt: new Date(doc.updatedAt).toISOString()
     }));
 
-    return NextResponse.json({ success: true, files: fileList });
+    return NextResponse.json({
+      success: true,
+      files: fileList,
+      semanticAvailable: Boolean(openaiKey)
+    });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
   }
@@ -84,10 +86,10 @@ export async function GET() {
 
 // POST: Handles add file, delete file, and query search
 export async function POST(req: NextRequest) {
-  const userId = await requireSessionUserId();
-  if (userId instanceof NextResponse) return userId;
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
-  const limited = checkRateLimit(userId, "write", WRITE_RATE_LIMIT);
+  const limited = checkRateLimit(session.userId, "write", WRITE_RATE_LIMIT);
   if (limited) return limited;
 
   try {
@@ -125,9 +127,13 @@ export async function POST(req: NextRequest) {
       await db.delete(documentChunks).where(eq(documentChunks.documentId, doc.id));
 
       const chunks = chunkText(content);
+      let embedded = false;
       if (chunks.length > 0) {
-        const embedConfig = parseEmbedConfig(body.embed);
-        const embeddings = embedConfig ? await getEmbeddings(embedConfig.provider, embedConfig.key, chunks) : [];
+        // Default: embed when the org has an OpenAI key. `embed: false` skips.
+        const wantEmbed = body.embed !== false;
+        const openaiKey = wantEmbed ? await resolveOpenAiKey(session.organizationId) : undefined;
+        const embeddings = openaiKey ? await getEmbeddings("openai", openaiKey, chunks) : [];
+        embedded = embeddings.length > 0;
 
         await db.insert(documentChunks).values(
           chunks.map((chunkContent, index) => ({
@@ -139,7 +145,11 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      return NextResponse.json({ success: true, message: `File ${doc.name} created/updated successfully.` });
+      return NextResponse.json({
+        success: true,
+        message: `File ${doc.name} created/updated successfully.`,
+        embedded
+      });
     }
 
     if (action === "delete") {
@@ -159,7 +169,7 @@ export async function POST(req: NextRequest) {
     if (action === "search") {
       const { query } = body;
       if (!query || typeof query !== "string") {
-        return NextResponse.json({ success: true, context: "", matches: [] });
+        return NextResponse.json({ success: true, context: "", matches: [], mode: "keyword" });
       }
       if (query.length > MAX_KNOWLEDGE_QUERY_LENGTH) {
         return NextResponse.json(
@@ -168,10 +178,22 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const embedConfig = parseEmbedConfig(body.embed);
+      const mode = body.mode === "semantic" ? "semantic" : "keyword";
 
-      if (embedConfig) {
-        const [queryEmbedding] = await getEmbeddings(embedConfig.provider, embedConfig.key, [query]);
+      if (mode === "semantic") {
+        const openaiKey = await resolveOpenAiKey(session.organizationId);
+        if (!openaiKey) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "Semantic search needs an OpenAI key. Add one under Settings → Integrations, then re-save documents to generate embeddings."
+            },
+            { status: 400 }
+          );
+        }
+
+        const [queryEmbedding] = await getEmbeddings("openai", openaiKey, [query]);
         const distance = cosineDistance(documentChunks.embedding, queryEmbedding);
 
         const rows = await db
@@ -182,6 +204,17 @@ export async function POST(req: NextRequest) {
           .orderBy(distance)
           .limit(10);
 
+        if (rows.length === 0) {
+          return NextResponse.json({
+            success: true,
+            mode: "semantic",
+            context: "",
+            matches: [],
+            message:
+              "No embedded chunks found. Re-save documents after configuring an OpenAI key to index them for semantic search."
+          });
+        }
+
         const matches = rows.map((row) => ({
           filename: row.filename,
           relevance: 1 - Number(row.distance),
@@ -190,11 +223,15 @@ export async function POST(req: NextRequest) {
 
         const combinedContext = rows.map((row) => `--- DOCUMENT: ${row.filename} ---\n${row.content}`).join("\n\n");
 
-        return NextResponse.json({ success: true, context: combinedContext.trim(), matches });
+        return NextResponse.json({
+          success: true,
+          mode: "semantic",
+          context: combinedContext.trim(),
+          matches
+        });
       }
 
-      // Keyword-search fallback over whole-document content (used when no
-      // embedding provider key was supplied).
+      // Keyword-search fallback over whole-document content.
       const rows = await db.select().from(documents);
       const matches: { filename: string; relevance: number; snippet: string }[] = [];
       let combinedContext = "";
@@ -224,7 +261,12 @@ export async function POST(req: NextRequest) {
 
       matches.sort((a, b) => b.relevance - a.relevance);
 
-      return NextResponse.json({ success: true, context: combinedContext.trim(), matches });
+      return NextResponse.json({
+        success: true,
+        mode: "keyword",
+        context: combinedContext.trim(),
+        matches
+      });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

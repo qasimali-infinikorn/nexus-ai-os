@@ -16,11 +16,9 @@ organizations. The BYOK model moved from per-browser `localStorage` to
   stored client-side.
 - The server-side calls to OpenAI/Anthropic/Gemini in `lib/agents.ts` still
   exist to avoid CORS issues calling provider APIs directly from the browser.
-- The Knowledge Base's optional embedding key (`embed: { provider, key }` on
-  `/api/knowledge`) still follows a per-request BYOK model — it's a
-  narrower, advanced feature (semantic search) not yet promoted to the
-  org-level key store; never persisted server-side, only used inline for
-  that one request.
+- The Knowledge Base uses the same org OpenAI key for embeddings when
+  documents are saved and when `mode: "semantic"` search runs — never a
+  client-supplied key.
 
 **Implication:** a compromised `ENCRYPTION_KEY` (or direct database access)
 exposes every org's provider keys — treat it as seriously as the keys

@@ -226,10 +226,10 @@ is a separate decision from the API-layer harness added here.
 - No end-to-end test of the `signIn()`/`signOut()` flow itself (see
   [`AUTH.md`](./AUTH.md)'s "Known gaps" — covered indirectly via
   `tests/lib/queries.test.ts`).
-- Semantic search isn't wired into the Knowledge Base UI yet (API-only, see
-  above).
-- Only OpenAI embeddings are supported (`lib/embeddings.ts`); adding another
-  provider means adding its dimension and a migration to match
+- Semantic search is wired in the Knowledge Base Documents UI (Keyword /
+  Semantic toggle). Embeddings use the org OpenAI key from Settings →
+  Integrations; only OpenAI embeddings are supported (`lib/embeddings.ts`).
+  Adding another provider means adding its dimension and a migration to match
   `EMBEDDING_DIMENSIONS` in `lib/db/schema.ts`.
 - No background job/queue system — embedding generation happens inline in
   the request (synchronous), so a very large document's `add` call will be

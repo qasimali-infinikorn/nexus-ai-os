@@ -170,28 +170,28 @@ Lists all documents.
 
 ### `POST /api/knowledge`
 
-Body is discriminated by `action`. `add` and `search` both accept an
-optional `embed` field to opt into pgvector semantic search instead of
-keyword search:
+Body is discriminated by `action`. Search accepts an optional `mode`; add
+auto-embeds when the org has an OpenAI key configured in Settings →
+Integrations (org BYOK — never send provider keys from the browser).
 
 ```ts
-embed?: { provider: "openai", key: string }
+mode?: "keyword" | "semantic"   // search only; default "keyword"
+embed?: false                   // add only; set false to skip embedding even if a key exists
 ```
 
 **`action: "add"`** — create or overwrite a document by name.
 
 ```ts
-{ action: "add", name: string, content: string, embed?: { provider: "openai", key: string } }
+{ action: "add", name: string, content: string, embed?: false }
 ```
 `name` is trimmed and capped at `MAX_KNOWLEDGE_NAME_LENGTH` (200 chars); it's
 just a unique label now, not a filesystem path, so no character sanitization
 is needed. `content` is capped at `MAX_KNOWLEDGE_CONTENT_BYTES` (2 MB);
 oversized content returns `400`. Adding a `name` that already exists
 replaces its content and re-chunks it from scratch (old chunks/embeddings
-for that document are deleted first). If `embed` is supplied, each chunk's
-embedding is computed via `lib/embeddings.ts` and stored; otherwise chunks
-are stored with `embedding: null` (keyword search still works over the raw
-`content`; semantic search does not, for chunks with no embedding).
+for that document are deleted first). When the org has an OpenAI key, each
+chunk is embedded via `lib/embeddings.ts` unless `embed: false`. Otherwise
+chunks are stored with `embedding: null` (keyword search still works).
 
 **`action: "delete"`** — remove a document by name (cascades to its chunks).
 
@@ -204,27 +204,27 @@ are stored with `embedding: null` (keyword search still works over the raw
 `knowledge` agent via `/api/orchestrate`.
 
 ```ts
-{ action: "search", query: string, embed?: { provider: "openai", key: string } }   // query capped at MAX_KNOWLEDGE_QUERY_LENGTH (500 chars)
+{ action: "search", query: string, mode?: "keyword" | "semantic" }
 // ->
 {
   success: true,
-  context: string;   // concatenated "--- DOCUMENT: <name> ---\n<content-or-chunk>" blocks, in relevance order
+  mode: "keyword" | "semantic",
+  context: string;   // concatenated "--- DOCUMENT: <name> ---\n<content-or-chunk>" blocks
   matches: { filename: string; relevance: number; snippet: string }[];
 }
 ```
 
-- **Without `embed`** (default): keyword search over whole-document
-  content — literal (regex-escaped) term-occurrence counting, same scoring
-  as before this was backed by Postgres. `relevance` is a raw match count
-  (or `0.1` for a non-empty document with zero term hits).
-- **With `embed`**: semantic search. The query is embedded, then matched
-  against chunk embeddings by pgvector cosine distance, top 10 closest
-  chunks across all documents. `relevance` is `1 - cosine distance` (higher
-  = more similar). Chunks with no stored embedding are excluded.
+- **`mode: "keyword"`** (default): literal term-occurrence counting over
+  whole-document content. `relevance` is a raw match count (or `0.1` for a
+  non-empty document with zero term hits).
+- **`mode: "semantic"`**: embeds the query with the org OpenAI key, then
+  ranks chunk embeddings by pgvector cosine distance (top 10). Returns
+  `400` if no OpenAI key is configured. Chunks with no stored embedding are
+  excluded.
 
-`components/knowledge-base.tsx` does not currently send `embed`, so the
-dashboard UI only exercises the keyword-search path — semantic search is
-available at the API level but not yet wired into a UI control.
+`GET /api/knowledge` also returns `semanticAvailable: boolean` so the UI can
+enable the Semantic toggle. The Documents page (`/knowledge-base/manage`)
+exposes Keyword / Semantic retrieval controls.
 
 All actions and `GET` return `{ success: false, error: string }` with a
 `4xx`/`500` status on failure instead of throwing.

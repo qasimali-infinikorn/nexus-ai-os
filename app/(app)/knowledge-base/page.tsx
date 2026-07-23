@@ -20,8 +20,8 @@ export default function KnowledgeBasePage() {
 
       <DemoNotice>
         The source counts and results below are demo content. Your <em>real</em> indexed documents — stored in
-        Postgres with pgvector — live in <Link href="/knowledge-base/manage">Documents</Link>, where RAG questions
-        run against them for real.
+        Postgres with pgvector — live in <Link href="/knowledge-base/manage">Documents</Link>, where Keyword and
+        Semantic RAG questions run against them for real.
       </DemoNotice>
 
       <Card>
