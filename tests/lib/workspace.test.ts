@@ -149,6 +149,9 @@ describe("Phase 2 workspace data", () => {
     const stats = await getAgentRunStats(organization.id);
     expect(stats.total).toBe(1);
     expect(stats.last7d).toBe(1);
+    expect(stats.thisMonth).toBe(1);
+    expect(stats.succeeded).toBe(1);
+    expect(stats.failed).toBe(0);
 
     const dash = await getDashboardStats(organization.id, user.id);
     expect(dash.meetingsToday).toBe(1);

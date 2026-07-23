@@ -387,14 +387,24 @@ export async function listAgentRuns(organizationId: string, limit = 30): Promise
 export async function getAgentRunStats(organizationId: string): Promise<{
   total: number;
   last7d: number;
+  thisMonth: number;
+  succeeded: number;
+  failed: number;
   byAgent: { agentType: string; count: number }[];
 }> {
   const db = getDb();
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+
   const [totals] = await db
     .select({
       total: sql<number>`count(*)::int`,
-      last7d: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${weekAgo})::int`
+      last7d: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${weekAgo})::int`,
+      thisMonth: sql<number>`count(*) filter (where ${agentRuns.createdAt} >= ${monthStart})::int`,
+      succeeded: sql<number>`count(*) filter (where ${agentRuns.status} = 'succeeded')::int`,
+      failed: sql<number>`count(*) filter (where ${agentRuns.status} = 'failed')::int`
     })
     .from(agentRuns)
     .where(eq(agentRuns.organizationId, organizationId));
@@ -412,6 +422,9 @@ export async function getAgentRunStats(organizationId: string): Promise<{
   return {
     total: totals?.total ?? 0,
     last7d: totals?.last7d ?? 0,
+    thisMonth: totals?.thisMonth ?? 0,
+    succeeded: totals?.succeeded ?? 0,
+    failed: totals?.failed ?? 0,
     byAgent
   };
 }

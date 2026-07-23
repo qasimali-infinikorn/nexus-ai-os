@@ -60,8 +60,10 @@ export default async function AgentsPage() {
     listOrgCustomAgents(session.organizationId)
   ]);
 
-  const succeeded = stats.byAgent.reduce((n, a) => n + a.count, 0);
-  const successRate = stats.total > 0 ? `${Math.round((succeeded / stats.total) * 1000) / 10}%` : "—";
+  const successRate =
+    stats.succeeded + stats.failed > 0
+      ? `${Math.round((stats.succeeded / (stats.succeeded + stats.failed)) * 1000) / 10}%`
+      : "—";
 
   const latestByType = new Map<string, AgentRun>();
   for (const run of runs) {

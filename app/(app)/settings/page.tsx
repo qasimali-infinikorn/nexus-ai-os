@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getUserById } from "@/lib/db/queries";
-import { Card, CardHead, Pill, Avatar, Bar, DemoNotice } from "@/components/workspace/ui";
-import { usageStats } from "@/lib/workspace/content";
+import { getAgentRunStats, listAgentRuns } from "@/lib/db/workspace";
+import { Card, CardHead, Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
 import { connectedServices, apiKeys } from "@/lib/workspace/settings-content";
+import { formatRelativeTime } from "@/lib/workspace/admin-ui";
 import { KeyRound, Plus } from "lucide-react";
 import { ProfileForm } from "./profile-form";
 
@@ -14,9 +16,20 @@ function initials(name: string) {
 
 export default async function ProfileSettingsPage() {
   const session = await auth();
-  if (!session?.user?.id) return null;
+  if (!session?.user?.id || !session.organizationId) redirect("/login");
   const user = await getUserById(session.user.id);
   if (!user) return null;
+
+  const [stats, recentRuns] = await Promise.all([
+    getAgentRunStats(session.organizationId),
+    listAgentRuns(session.organizationId, 5)
+  ]);
+
+  const finished = stats.succeeded + stats.failed;
+  const successRate =
+    finished > 0 ? `${Math.round((stats.succeeded / finished) * 1000) / 10}%` : "—";
+
+  const monthLabel = new Date().toLocaleString(undefined, { month: "long" });
 
   return (
     <div className="stack-lg">
@@ -42,28 +55,23 @@ export default async function ProfileSettingsPage() {
       </Card>
 
       <Card>
-        <CardHead title="AI usage · this month" bordered />
+        <CardHead
+          title={`AI usage · ${monthLabel}`}
+          sub="From agent runs in this workspace. Token metering isn’t recorded yet."
+          action={
+            <Link href="/agents" className="btn-secondary btn-sm">
+              View agents
+            </Link>
+          }
+          bordered
+        />
         <div className="card-pad stack-lg">
-          <DemoNotice>
-            Usage figures are demo content — per-org run metering lands with the agent-runs table.
-          </DemoNotice>
-
           <div className="grid-4">
-            <div className="stack" style={{ gap: 6 }}>
-              <span className="row" style={{ gap: 6, alignItems: "baseline" }}>
-                <span className="stat-number" style={{ fontSize: "1.6rem" }}>
-                  {usageStats.tokensUsed}
-                </span>
-                <span className="muted" style={{ fontSize: "0.8rem" }}>
-                  / {usageStats.tokenLimit} tokens
-                </span>
-              </span>
-              <Bar pct={usageStats.tokenPct} />
-            </div>
             {[
-              { label: "Agent runs", value: usageStats.agentRuns },
-              { label: "Docs generated", value: usageStats.docsGenerated },
-              { label: "Success rate", value: usageStats.successRate }
+              { label: "Runs this month", value: stats.thisMonth },
+              { label: "Runs (7d)", value: stats.last7d },
+              { label: "Success rate", value: successRate },
+              { label: "Failed", value: stats.failed }
             ].map((s) => (
               <div key={s.label} className="stack" style={{ gap: 2 }}>
                 <span className="stat-number" style={{ fontSize: "1.6rem" }}>
@@ -75,6 +83,44 @@ export default async function ProfileSettingsPage() {
               </div>
             ))}
           </div>
+
+          {recentRuns.length > 0 ? (
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="muted" style={{ fontSize: "0.8rem" }}>
+                Recent runs
+              </span>
+              <div className="list" style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
+                {recentRuns.map((run) => (
+                  <div key={run.id} className="list-row">
+                    <div className="stack" style={{ flex: 1, minWidth: 0 }}>
+                      <span className="title mono">{run.agentType}</span>
+                      <span className="meta truncate">
+                        {(run.resultExcerpt || run.prompt || "—").slice(0, 72)}
+                      </span>
+                    </div>
+                    <Pill
+                      tone={
+                        run.status === "succeeded"
+                          ? "green"
+                          : run.status === "failed"
+                            ? "red"
+                            : "amber"
+                      }
+                    >
+                      {run.status}
+                    </Pill>
+                    <span className="muted" style={{ fontSize: "var(--fs-sm)", whiteSpace: "nowrap" }}>
+                      {formatRelativeTime(run.createdAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="dim" style={{ margin: 0 }}>
+              No agent runs yet. Run a specialist from Agents or the AI Workspace to populate usage.
+            </p>
+          )}
         </div>
       </Card>
 

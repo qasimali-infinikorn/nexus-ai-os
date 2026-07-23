@@ -645,24 +645,6 @@ export const notifications = [
 
 /* ── Settings ─────────────────────────────────────────────────────────── */
 
-export const usageStats = {
-  tokensUsed: "2.4M",
-  tokenLimit: "5M",
-  tokenPct: 48,
-  agentRuns: 312,
-  docsGenerated: 48,
-  successRate: "99.2%"
-};
-
-export const connectedServices = [
-  { id: "cs1", name: "GitHub", detail: "acme-cloud", initials: "GH", avatarIndex: 0, connected: true },
-  { id: "cs2", name: "Jira", detail: "acme.atlassian.net", initials: "JR", avatarIndex: 1, connected: true },
-  { id: "cs3", name: "Confluence", detail: "Platform space", initials: "CF", avatarIndex: 2, connected: true },
-  { id: "cs4", name: "PagerDuty", detail: "Not connected", initials: "PD", avatarIndex: 3, connected: false },
-  { id: "cs5", name: "Google Calendar", detail: "alex.morgan@acmecloud.com", initials: "GC", avatarIndex: 4, connected: true },
-  { id: "cs6", name: "Slack", detail: "Not connected", initials: "SL", avatarIndex: 5, connected: false }
-];
-
 export const preferences = [
   { id: "pf1", title: "Compact layout", body: "Denser spacing across tables and lists", on: false },
   { id: "pf2", title: "Proactive AI suggestions", body: "Let agents surface insights on the dashboard", on: true },
