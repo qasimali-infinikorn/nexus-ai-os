@@ -25,15 +25,6 @@ export const DEFAULT_NOTIFICATION_PREFS: Record<string, { inApp: boolean; email:
   agent_runs: { inApp: true, email: false, slack: false }
 };
 
-export const connectedServices = [
-  { id: "gh", name: "GitHub", detail: "acme-cloud org · 42 repos", initials: "GH", avatarIndex: 0, state: "Connected" as const },
-  { id: "sl", name: "Slack", detail: "acme.slack.com · 8 channels", initials: "SL", avatarIndex: 5, state: "Connected" as const },
-  { id: "ji", name: "Jira", detail: "Order Platform board", initials: "JI", avatarIndex: 1, state: "Connected" as const },
-  { id: "az", name: "Azure DevOps", detail: "CI/CD pipelines", initials: "AZ", avatarIndex: 2, state: "Connected" as const },
-  { id: "gd", name: "Google Drive", detail: "Shared: Proposals", initials: "GD", avatarIndex: 4, state: "Connected" as const },
-  { id: "m365", name: "Microsoft 365", detail: "Calendar & SharePoint", initials: "M3", avatarIndex: 3, state: "Reauth needed" as const }
-];
-
 export const apiKeys = [
   { id: "k1", name: "Production key", masked: "nx_live_••••••••7f2a", lastUsed: "Last used 4 min ago" },
   { id: "k2", name: "CI/CD key", masked: "nx_live_••••••••b91c", lastUsed: "Last used 2 h ago" }

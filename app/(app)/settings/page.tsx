@@ -1,11 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getUserById } from "@/lib/db/queries";
+import { getUserById, getUserSettings, listOrgProviderKeyStatus } from "@/lib/db/queries";
 import { getAgentRunStats, listAgentRuns } from "@/lib/db/workspace";
+import {
+  getGoogleCalendarConnection,
+  googleCalendarConfigured
+} from "@/lib/integrations/google-calendar";
+import {
+  getMicrosoftCalendarConnection,
+  microsoftCalendarConfigured
+} from "@/lib/integrations/microsoft-calendar";
 import { Card, CardHead, Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
-import { connectedServices, apiKeys } from "@/lib/workspace/settings-content";
+import { apiKeys } from "@/lib/workspace/settings-content";
 import { formatRelativeTime } from "@/lib/workspace/admin-ui";
+import type { Tone } from "@/lib/workspace/content";
 import { KeyRound, Plus } from "lucide-react";
 import { ProfileForm } from "./profile-form";
 
@@ -14,15 +23,36 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
+type ServiceRow = {
+  id: string;
+  name: string;
+  detail: string;
+  initials: string;
+  avatarIndex: number;
+  state: string;
+  tone: Tone;
+  href: string;
+};
+
+const PROVIDER_META: Record<string, { name: string; initials: string; avatarIndex: number }> = {
+  openai: { name: "OpenAI", initials: "OA", avatarIndex: 0 },
+  anthropic: { name: "Anthropic", initials: "AN", avatarIndex: 1 },
+  google: { name: "Google Gemini", initials: "GG", avatarIndex: 2 }
+};
+
 export default async function ProfileSettingsPage() {
   const session = await auth();
   if (!session?.user?.id || !session.organizationId) redirect("/login");
   const user = await getUserById(session.user.id);
   if (!user) return null;
 
-  const [stats, recentRuns] = await Promise.all([
+  const [stats, recentRuns, keyStatuses, settings, googleConn, msConn] = await Promise.all([
     getAgentRunStats(session.organizationId),
-    listAgentRuns(session.organizationId, 5)
+    listAgentRuns(session.organizationId, 5),
+    listOrgProviderKeyStatus(session.organizationId),
+    getUserSettings(session.user.id, session.organizationId),
+    getGoogleCalendarConnection(session.user.id, session.organizationId),
+    getMicrosoftCalendarConnection(session.user.id, session.organizationId)
   ]);
 
   const finished = stats.succeeded + stats.failed;
@@ -30,6 +60,90 @@ export default async function ProfileSettingsPage() {
     finished > 0 ? `${Math.round((stats.succeeded / finished) * 1000) / 10}%` : "—";
 
   const monthLabel = new Date().toLocaleString(undefined, { month: "long" });
+
+  const services: ServiceRow[] = [
+    ...keyStatuses.map((status) => {
+      const meta = PROVIDER_META[status.provider] ?? {
+        name: status.provider,
+        initials: status.provider.slice(0, 2).toUpperCase(),
+        avatarIndex: 0
+      };
+      return {
+        id: `key-${status.provider}`,
+        name: meta.name,
+        detail: status.configured
+          ? status.updatedAt
+            ? `Org key · updated ${formatRelativeTime(status.updatedAt)}`
+            : "Org key configured"
+          : "No org key yet — add under Integrations",
+        initials: meta.initials,
+        avatarIndex: meta.avatarIndex,
+        state: status.configured ? "Connected" : "Not configured",
+        tone: (status.configured ? "green" : "slate") as Tone,
+        href: "/settings/integrations"
+      };
+    }),
+    {
+      id: "google-calendar",
+      name: "Google Calendar",
+      detail: googleConn?.accountEmail
+        ? googleConn.accountEmail
+        : googleCalendarConfigured()
+          ? "Connect under Integrations"
+          : "App credentials not configured",
+      initials: "GC",
+      avatarIndex: 4,
+      state: googleConn ? "Connected" : "Not configured",
+      tone: (googleConn ? "green" : "slate") as Tone,
+      href: "/settings/integrations"
+    },
+    {
+      id: "microsoft-calendar",
+      name: "Microsoft Calendar",
+      detail: msConn?.accountEmail
+        ? msConn.accountEmail
+        : microsoftCalendarConfigured()
+          ? "Connect under Integrations"
+          : "App credentials not configured",
+      initials: "MS",
+      avatarIndex: 3,
+      state: msConn ? "Connected" : "Not configured",
+      tone: (msConn ? "green" : "slate") as Tone,
+      href: "/settings/integrations"
+    },
+    {
+      id: "slack",
+      name: "Slack notifications",
+      detail: settings.delivery.slackWebhookUrl
+        ? "Incoming webhook saved for your account"
+        : "Add a webhook under Notifications",
+      initials: "SL",
+      avatarIndex: 5,
+      state: settings.delivery.slackWebhookUrl ? "Connected" : "Not configured",
+      tone: (settings.delivery.slackWebhookUrl ? "green" : "slate") as Tone,
+      href: "/settings/notifications"
+    },
+    {
+      id: "github-webhook",
+      name: "GitHub reviews",
+      detail: "Point a repo webhook at Integrations · Review webhooks",
+      initials: "GH",
+      avatarIndex: 0,
+      state: "Webhook ingest",
+      tone: "blue" as Tone,
+      href: "/settings/integrations"
+    },
+    {
+      id: "jira-webhook",
+      name: "Jira reviews",
+      detail: "Point a Jira webhook at Integrations · Review webhooks",
+      initials: "JI",
+      avatarIndex: 1,
+      state: "Webhook ingest",
+      tone: "blue" as Tone,
+      href: "/settings/integrations"
+    }
+  ];
 
   return (
     <div className="stack-lg">
@@ -127,7 +241,7 @@ export default async function ProfileSettingsPage() {
       <Card>
         <CardHead
           title="Connected services"
-          sub="Managed per organization"
+          sub="Live status for this workspace — never invented"
           action={
             <Link href="/settings/integrations" className="btn-secondary btn-sm">
               Manage
@@ -136,15 +250,15 @@ export default async function ProfileSettingsPage() {
           bordered
         />
         <div className="list">
-          {connectedServices.map((svc) => (
-            <div key={svc.id} className="list-row">
+          {services.map((svc) => (
+            <Link key={svc.id} href={svc.href} className="list-row">
               <Avatar initials={svc.initials} index={svc.avatarIndex} square />
               <div className="stack" style={{ flex: 1, minWidth: 0 }}>
                 <span className="title">{svc.name}</span>
                 <span className="meta truncate">{svc.detail}</span>
               </div>
-              <Pill tone={svc.state === "Connected" ? "green" : "amber"}>{svc.state}</Pill>
-            </div>
+              <Pill tone={svc.tone}>{svc.state}</Pill>
+            </Link>
           ))}
         </div>
       </Card>

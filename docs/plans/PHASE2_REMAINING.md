@@ -17,6 +17,7 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 | **Knowledge Base** | Done | Org-scoped documents (`0013`); semantic search via org OpenAI key. |
 | **Org audit UI** | Done | Settings → Workspace lists real `audit_log` rows for the active org. |
 | **AI usage (Settings)** | Done | Profile page shows live `agent_runs` month/7d/success — no invented tokens. |
+| **Connected services** | Done | Profile lists live BYOK / calendar / Slack / webhook ingest status. |
 
 ## Remaining (optional / later)
 
