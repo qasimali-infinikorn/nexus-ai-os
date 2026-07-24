@@ -333,7 +333,7 @@ export async function setMeetingActionItemDone(params: {
 
 export async function createAgentRun(params: {
   organizationId: string;
-  userId: string;
+  userId?: string | null;
   agentType: string;
   provider: string;
   model: string;
@@ -344,7 +344,7 @@ export async function createAgentRun(params: {
     .insert(agentRuns)
     .values({
       organizationId: params.organizationId,
-      userId: params.userId,
+      userId: params.userId ?? null,
       agentType: params.agentType,
       provider: params.provider,
       model: params.model,

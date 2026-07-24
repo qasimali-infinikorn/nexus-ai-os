@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { listOrgApiKeys } from "@/lib/db/api-keys";
 import { getUserById, getUserSettings, listOrgProviderKeyStatus } from "@/lib/db/queries";
 import { getAgentRunStats, listAgentRuns } from "@/lib/db/workspace";
 import {
@@ -11,12 +12,11 @@ import {
   getMicrosoftCalendarConnection,
   microsoftCalendarConfigured
 } from "@/lib/integrations/microsoft-calendar";
-import { Card, CardHead, Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
-import { apiKeys } from "@/lib/workspace/settings-content";
+import { Card, CardHead, Pill, Avatar } from "@/components/workspace/ui";
 import { formatRelativeTime } from "@/lib/workspace/admin-ui";
 import type { Tone } from "@/lib/workspace/content";
-import { KeyRound, Plus } from "lucide-react";
 import { ProfileForm } from "./profile-form";
+import { ApiKeysPanel } from "./api-keys-panel";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -46,13 +46,16 @@ export default async function ProfileSettingsPage() {
   const user = await getUserById(session.user.id);
   if (!user) return null;
 
-  const [stats, recentRuns, keyStatuses, settings, googleConn, msConn] = await Promise.all([
+  const canManageKeys = session.role === "owner" || session.role === "admin";
+
+  const [stats, recentRuns, keyStatuses, settings, googleConn, msConn, apiKeys] = await Promise.all([
     getAgentRunStats(session.organizationId),
     listAgentRuns(session.organizationId, 5),
     listOrgProviderKeyStatus(session.organizationId),
     getUserSettings(session.user.id, session.organizationId),
     getGoogleCalendarConnection(session.user.id, session.organizationId),
-    getMicrosoftCalendarConnection(session.user.id, session.organizationId)
+    getMicrosoftCalendarConnection(session.user.id, session.organizationId),
+    listOrgApiKeys(session.organizationId)
   ]);
 
   const finished = stats.succeeded + stats.failed;
@@ -264,35 +267,19 @@ export default async function ProfileSettingsPage() {
       </Card>
 
       <Card>
-        <CardHead
-          title="API keys"
-          sub="Programmatic access to this workspace"
-          action={
-            <button type="button" className="btn-secondary btn-sm" disabled title="Not implemented yet">
-              <Plus size={13} aria-hidden />
-              <span>Generate</span>
-            </button>
-          }
-          bordered
-        />
+        <CardHead title="API keys" sub="Programmatic access to this workspace" bordered />
         <div className="card-pad">
-          <DemoNotice>
-            Sample keys — issuing real API keys isn&rsquo;t implemented yet, so nothing here grants access.
-          </DemoNotice>
-        </div>
-        <div className="list">
-          {apiKeys.map((k) => (
-            <div key={k.id} className="list-row">
-              <span className="stat-icon violet" style={{ width: 32, height: 32 }}>
-                <KeyRound size={15} aria-hidden />
-              </span>
-              <div className="stack" style={{ flex: 1, minWidth: 0 }}>
-                <span className="title">{k.name}</span>
-                <span className="meta mono">{k.masked}</span>
-              </div>
-              <span className="muted" style={{ fontSize: "var(--fs-sm)" }}>{k.lastUsed}</span>
-            </div>
-          ))}
+          <ApiKeysPanel
+            canManage={canManageKeys}
+            keys={apiKeys.map((k) => ({
+              id: k.id,
+              name: k.name,
+              keyPrefix: k.keyPrefix,
+              createdAt: k.createdAt,
+              lastUsedAt: k.lastUsedAt,
+              revokedAt: k.revokedAt
+            }))}
+          />
         </div>
       </Card>
     </div>

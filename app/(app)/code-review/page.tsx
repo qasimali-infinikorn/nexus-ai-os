@@ -1,16 +1,9 @@
 import Link from "next/link";
-import { GitPullRequest, CircleCheck, CircleAlert } from "lucide-react";
+import { GitPullRequest, Sparkles, Webhook } from "lucide-react";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { Card, Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
-import { pullRequests, codeReviewStats } from "@/lib/workspace/content";
+import { Card } from "@/components/workspace/ui";
 
 const FILTERS = ["Open", "Merged", "All"] as const;
-
-const STATE_PILL = {
-  review_requested: { tone: "amber" as const, label: "Review requested" },
-  approved: { tone: "green" as const, label: "Approved" },
-  merged: { tone: "violet" as const, label: "Merged" }
-};
 
 export default async function CodeReviewPage({
   searchParams
@@ -20,17 +13,11 @@ export default async function CodeReviewPage({
   const { filter = "Open" } = await searchParams;
   const active = FILTERS.includes(filter as (typeof FILTERS)[number]) ? filter : "Open";
 
-  const list = pullRequests.filter((pr) => {
-    if (active === "All") return true;
-    if (active === "Merged") return pr.state === "merged";
-    return pr.state !== "merged";
-  });
-
   return (
     <>
       <PageHeader
         title="Pull requests"
-        description={`${codeReviewStats.open} open · ${codeReviewStats.awaitingYou} awaiting your review · avg. review time ${codeReviewStats.avgReviewTime}`}
+        description="GitHub-connected PR inbox is not wired yet — review diffs with AI or ingest review webhooks."
         actions={
           <div className="segmented">
             {FILTERS.map((f) => (
@@ -42,57 +29,32 @@ export default async function CodeReviewPage({
         }
       />
 
-      <DemoNotice>
-        Demo pull requests. Connecting GitHub replaces this list with your real repositories — the AI review on
-        each PR already runs against your org&rsquo;s provider key.
-      </DemoNotice>
-
       <Card>
-        <div className="list">
-          {list.map((pr) => {
-            const st = STATE_PILL[pr.state];
-            return (
-              <Link key={pr.number} href={`/code-review/${pr.number}`} className="list-row" style={{ gap: 14 }}>
-                <span className="stat-icon violet" style={{ width: 34, height: 34 }}>
-                  <GitPullRequest size={16} aria-hidden />
-                </span>
-
-                <div className="stack" style={{ flex: 1, minWidth: 0 }}>
-                  <span className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                    <span className="title truncate">{pr.title}</span>
-                    <Pill tone={st.tone}>{st.label}</Pill>
-                  </span>
-                  <span className="meta">
-                    #{pr.number} · {pr.repo} · {pr.openedAgo}
-                  </span>
-                </div>
-
-                <span className="row nowrap" style={{ gap: 10, fontSize: "0.82rem", fontWeight: 600 }}>
-                  <span style={{ color: "#059669" }}>+{pr.additions}</span>
-                  <span style={{ color: "#dc2626" }}>-{pr.deletions}</span>
-                </span>
-
-                <span className="row nowrap" style={{ gap: 5, fontSize: "0.8rem" }}>
-                  {pr.checksOk ? (
-                    <CircleCheck size={14} aria-hidden style={{ color: "#059669" }} />
-                  ) : (
-                    <CircleAlert size={14} aria-hidden style={{ color: "#d97706" }} />
-                  )}
-                  <span className="muted">{pr.checks}</span>
-                </span>
-
-                <Avatar initials={pr.authorInitials} index={pr.avatarIndex} />
-              </Link>
-            );
-          })}
+        <div className="card-pad stack-lg" style={{ textAlign: "center", paddingBlock: 40 }}>
+          <span className="stat-icon violet" style={{ width: 44, height: 44, marginInline: "auto" }}>
+            <GitPullRequest size={20} aria-hidden />
+          </span>
+          <div className="stack" style={{ gap: 6, maxWidth: 420, marginInline: "auto" }}>
+            <h3 className="card-title" style={{ fontSize: "1.05rem" }}>
+              No pull requests yet
+            </h3>
+            <p className="dim" style={{ margin: 0, lineHeight: 1.55 }}>
+              Connecting a GitHub App will populate this list. Until then, paste a diff into the review runner, or
+              point repo webhooks at Settings → Integrations for Reviews notifications.
+            </p>
+          </div>
+          <div className="row" style={{ gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <Link href="/code-review/new" className="btn-primary">
+              <Sparkles size={15} aria-hidden />
+              <span>Review a diff</span>
+            </Link>
+            <Link href="/settings/integrations" className="btn-secondary">
+              <Webhook size={15} aria-hidden />
+              <span>Review webhooks</span>
+            </Link>
+          </div>
         </div>
       </Card>
-
-      {list.length === 0 ? (
-        <p className="muted" style={{ textAlign: "center", padding: 24 }}>
-          No pull requests match this filter.
-        </p>
-      ) : null}
     </>
   );
 }

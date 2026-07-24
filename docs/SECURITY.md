@@ -128,9 +128,10 @@ Guardrail regression coverage lives in `tests/lib/guardrails.test.ts`
 
 | Guardrail | Where | Limit |
 |---|---|---|
-| Rate limit | `/api/orchestrate` | 20 req/min per authenticated user |
-| Rate limit | `GET /api/knowledge` | 60 req/min per authenticated user |
-| Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user |
+| Rate limit | `/api/orchestrate` | 20 req/min per authenticated user or API key |
+| Rate limit | `GET /api/knowledge` | 60 req/min per authenticated user or API key |
+| Rate limit | `POST /api/knowledge` | 30 req/min per authenticated user or API key |
+| Org API keys | `/api/orchestrate`, `/api/knowledge` | `Authorization: Bearer nx_live_…` or `x-nexus-api-key`; SHA-256 at rest; owners/admins manage in Settings → Profile |
 | Rate limit | `POST /api/webhooks/devops` | 60 req/min per client IP |
 | Webhook auth | `POST /api/webhooks/devops` | `WEBHOOK_SECRET` via Bearer or `x-nexus-webhook-secret` (timing-safe) |
 | Webhook auth | `POST /api/webhooks/github` | `X-Hub-Signature-256` + `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`); optional `projectSlug` upserts Issues → Kanban |

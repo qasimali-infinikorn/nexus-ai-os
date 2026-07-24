@@ -203,6 +203,33 @@ export type Membership = typeof memberships.$inferSelect;
 export type NewMembership = typeof memberships.$inferInsert;
 export type OrgProviderKey = typeof orgProviderKeys.$inferSelect;
 export type NewOrgProviderKey = typeof orgProviderKeys.$inferInsert;
+
+/** Org-scoped programmatic API keys (plaintext shown once at create; only hash stored). */
+export const organizationApiKeys = pgTable(
+  "organization_api_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** First characters of the key for display, e.g. `nx_live_ab12`. */
+    keyPrefix: text("key_prefix").notNull(),
+    /** SHA-256 hex of the full secret. */
+    keyHash: text("key_hash").notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("organization_api_keys_hash_unique_idx").on(table.keyHash),
+    index("organization_api_keys_org_idx").on(table.organizationId)
+  ]
+);
+
+export type OrganizationApiKey = typeof organizationApiKeys.$inferSelect;
+export type NewOrganizationApiKey = typeof organizationApiKeys.$inferInsert;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 

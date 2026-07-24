@@ -3,11 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { listProjectTasks, listProjects } from "@/lib/db/queries";
-import { Card, Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
+import { Card, Pill, Avatar } from "@/components/workspace/ui";
 import { TaskDialogProvider, NewTaskButton } from "@/components/projects/board-shell";
 import { KanbanBoard } from "@/components/projects/kanban-board";
 import { PRIORITY_TONE, KIND_TONE, STATUS_BAR } from "@/lib/workspace/task-ui";
-import { boardSummary, roadmap } from "@/lib/workspace/content";
 
 const VIEWS = ["Kanban", "List", "Timeline", "Roadmap"] as const;
 type View = (typeof VIEWS)[number];
@@ -51,8 +50,7 @@ export default async function ProjectPage({
               <ChevronDown size={18} aria-hidden style={{ color: "var(--text-muted)" }} />
             </span>
             <p className="dim" style={{ fontSize: "var(--fs-body)" }}>
-              Day {boardSummary.day} of {boardSummary.totalDays} · {committed} points committed · {completed}{" "}
-              completed
+              {tasks.length} tasks · {committed} points committed · {completed} completed
             </p>
           </div>
         </div>
@@ -73,11 +71,6 @@ export default async function ProjectPage({
           <NewTaskButton />
         </div>
       </header>
-
-      <DemoNotice>
-        Tasks are stored in your workspace database — drag, create, and edit them freely. Connecting Jira or
-        Linear replaces this board with your real backlog.
-      </DemoNotice>
 
       {view === "Kanban" ? <KanbanBoard projectSlug={slug} tasks={tasks} /> : null}
 
@@ -148,14 +141,7 @@ export default async function ProjectPage({
               <div className="timeline-head">
                 <span />
                 {Array.from({ length: DAYS }, (_, i) => (
-                  <span
-                    key={i}
-                    className="chart-axis-label"
-                    style={{
-                      color: i + 1 === boardSummary.day ? "var(--accent)" : undefined,
-                      fontWeight: i + 1 === boardSummary.day ? 700 : 500
-                    }}
-                  >
+                  <span key={i} className="chart-axis-label">
                     D{i + 1}
                   </span>
                 ))}
@@ -187,36 +173,15 @@ export default async function ProjectPage({
       ) : null}
 
       {view === "Roadmap" ? (
-        <div className="grid-4" style={{ alignItems: "start" }}>
-          {roadmap.map((q) => (
-            <section key={q.id} className="card roadmap-col" aria-label={`${q.quarter} — ${q.theme}`}>
-              <header
-                className="roadmap-head"
-                style={{ background: `color-mix(in srgb, ${q.accent} 8%, transparent)` }}
-              >
-                <p className="strong" style={{ color: q.accent, fontSize: "var(--fs-title)" }}>
-                  {q.quarter}
-                </p>
-                <p className="card-sub">{q.theme}</p>
-              </header>
-              <div className="card-pad stack-md">
-                {q.items.map((it) => (
-                  <article key={it.id} className="roadmap-card">
-                    <p className="strong" style={{ fontSize: "var(--fs-title)", lineHeight: 1.45 }}>
-                      {it.title}
-                    </p>
-                    <div className="row" style={{ gap: 10, marginTop: 10 }}>
-                      <Pill tone={it.tone}>{it.state}</Pill>
-                      <span className="bar" style={{ flex: 1 }}>
-                        <span style={{ width: `${it.progress}%`, background: q.accent }} />
-                      </span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <Card>
+          <div className="card-pad stack-md">
+            <p className="dim" style={{ margin: 0, lineHeight: 1.55 }}>
+              Roadmap planning isn&rsquo;t configured for this project yet. Use Kanban, List, or Timeline for live
+              tasks. Quarterly roadmap items will appear here when that feature ships — we don&rsquo;t invent
+              milestones.
+            </p>
+          </div>
+        </Card>
       ) : null}
     </TaskDialogProvider>
   );

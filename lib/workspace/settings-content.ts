@@ -25,11 +25,6 @@ export const DEFAULT_NOTIFICATION_PREFS: Record<string, { inApp: boolean; email:
   agent_runs: { inApp: true, email: false, slack: false }
 };
 
-export const apiKeys = [
-  { id: "k1", name: "Production key", masked: "nx_live_••••••••7f2a", lastUsed: "Last used 4 min ago" },
-  { id: "k2", name: "CI/CD key", masked: "nx_live_••••••••b91c", lastUsed: "Last used 2 h ago" }
-];
-
 /** Planned third-party OAuth / deep integrations — not live connections. */
 export type IntegrationCatalogStatus = "planned" | "webhook";
 

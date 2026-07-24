@@ -1,79 +1,71 @@
 import Link from "next/link";
-import { Search, Sparkles, FolderGit, FileText } from "lucide-react";
+import { redirect } from "next/navigation";
+import { FileText, Sparkles } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { listOrgDocuments } from "@/lib/db/queries";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { Card, Pill, DemoNotice } from "@/components/workspace/ui";
-import { knowledgeResults, knowledgeSources, knowledgeStats } from "@/lib/workspace/content";
+import { Card } from "@/components/workspace/ui";
+import { formatRelativeTime } from "@/lib/workspace/admin-ui";
 
-export default function KnowledgeBasePage() {
+export default async function KnowledgeBasePage() {
+  const session = await auth();
+  if (!session?.organizationId) redirect("/login");
+
+  const docs = await listOrgDocuments(session.organizationId);
+
   return (
     <>
       <PageHeader
         title="Knowledge Base"
-        description={`Semantic search across ${knowledgeStats.sources} connected sources · ${knowledgeStats.documents} documents indexed`}
+        description={
+          docs.length === 0
+            ? "No documents indexed yet — add markdown in Documents to search and ask grounded questions."
+            : `${docs.length} document${docs.length === 1 ? "" : "s"} in this workspace`
+        }
         actions={
           <Link href="/knowledge-base/manage" className="btn-primary">
             <Sparkles size={16} aria-hidden />
-            <span>Ask AI</span>
+            <span>Documents &amp; ask</span>
           </Link>
         }
       />
 
-      <DemoNotice>
-        The source counts and results below are demo content. Your <em>real</em> indexed documents — stored in
-        Postgres with pgvector — live in <Link href="/knowledge-base/manage">Documents</Link>, where Keyword and
-        Semantic RAG questions run against them for real.
-      </DemoNotice>
-
       <Card>
-        <div className="card-pad">
-          <label className="row" style={{ gap: 10, padding: "4px 2px" }} htmlFor="kb-search">
-            <Search size={18} aria-hidden style={{ color: "var(--text-muted)" }} />
-            <input
-              id="kb-search"
-              className="form-input"
-              style={{ border: "none", background: "transparent", padding: 0, fontSize: "1rem" }}
-              placeholder="Search standards, ADRs, runbooks, and repo docs…"
-            />
-            <Pill tone="blue">Semantic</Pill>
-          </label>
-        </div>
-      </Card>
-
-      <div className="segmented" style={{ flexWrap: "wrap" }}>
-        {knowledgeSources.map((s, i) => (
-          <button key={s.id} type="button" className={i === 0 ? "active" : ""}>
-            {s.label} <span className="muted" style={{ marginLeft: 6 }}>{s.count}</span>
-          </button>
-        ))}
-      </div>
-
-      <Card>
-        {knowledgeResults.map((r) => (
-          <article key={r.id} className="result">
-            <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-              <span className="row" style={{ gap: 6, fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                <FolderGit size={13} aria-hidden />
-                {r.source}
-              </span>
-              <span className="muted" style={{ fontSize: "0.78rem" }}>
-                {r.path}
-              </span>
-              <Pill tone="green">{r.match}</Pill>
-            </div>
-            <h3 className="card-title" style={{ fontSize: "0.95rem" }}>
-              {r.title}
-            </h3>
-            <p className="snippet">{r.snippet}</p>
-            <p className="meta" style={{ marginTop: 8 }}>
-              {r.updated}
-            </p>
-          </article>
-        ))}
+        {docs.length === 0 ? (
+          <p className="dim" style={{ padding: "1.25rem", margin: 0, lineHeight: 1.55 }}>
+            Indexed documents live in Postgres (org-scoped). Open{" "}
+            <Link href="/knowledge-base/manage">Documents</Link> to upload content and run Keyword or Semantic
+            search.
+          </p>
+        ) : (
+          <div className="list">
+            {docs.map((doc) => {
+              const snippet = doc.content.slice(0, 220) + (doc.content.length > 220 ? "…" : "");
+              const bytes = Buffer.byteLength(doc.content, "utf8");
+              return (
+                <div key={doc.id} className="list-row" style={{ alignItems: "flex-start" }}>
+                  <span className="stat-icon violet" style={{ width: 32, height: 32, flexShrink: 0 }}>
+                    <FileText size={15} aria-hidden />
+                  </span>
+                  <div className="stack" style={{ flex: 1, minWidth: 0 }}>
+                    <span className="title mono">{doc.name}</span>
+                    <span className="meta" style={{ whiteSpace: "normal" }}>
+                      {snippet}
+                    </span>
+                    <span className="meta">
+                      {bytes.toLocaleString()} bytes · updated {formatRelativeTime(doc.updatedAt)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       <Link href="/knowledge-base/manage" className="btn-secondary" style={{ alignSelf: "flex-start" }}>
         <FileText size={15} aria-hidden />
-        <span>Manage your indexed documents</span>
+        <span>Manage indexed documents</span>
       </Link>
     </>
   );

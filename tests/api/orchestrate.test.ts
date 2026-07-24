@@ -10,7 +10,7 @@ import { readNdjson } from "../helpers/stream";
 // standing up a real Postgres connection. vi.hoisted() is required here:
 // vi.mock() factories run before this file's own top-level statements, so a
 // plain `const` referenced inside one would hit the temporal dead zone.
-const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
+const { mockAuth, mockGetOrgProviderKey, mockResolveOrgApiKey } = vi.hoisted(() => ({
   mockAuth: vi.fn(async () => ({
     user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
     organizationId: "test-org",
@@ -18,10 +18,16 @@ const { mockAuth, mockGetOrgProviderKey } = vi.hoisted(() => ({
     role: "owner" as const
   })),
   mockGetOrgProviderKey:
-    vi.fn<(orgId: string, provider: string) => Promise<string | undefined>>(() => Promise.resolve("sk-test"))
+    vi.fn<(orgId: string, provider: string) => Promise<string | undefined>>(() => Promise.resolve("sk-test")),
+  mockResolveOrgApiKey: vi.fn(
+    async (_plaintext?: string): Promise<{ organizationId: string; keyId: string } | undefined> => undefined
+  )
 }));
 vi.mock("@/lib/auth", () => ({ auth: () => mockAuth() }));
 vi.mock("@/lib/db/queries", () => ({ getOrgProviderKey: (...args: [string, string]) => mockGetOrgProviderKey(...args) }));
+vi.mock("@/lib/db/api-keys", () => ({
+  resolveOrgApiKey: (plaintext: string) => mockResolveOrgApiKey(plaintext)
+}));
 vi.mock("@/lib/db/custom-agents", () => ({
   getOrgCustomAgent: vi.fn(async () => undefined)
 }));
@@ -46,10 +52,10 @@ vi.mock("@/lib/db/workspace", () => ({
 
 const { POST } = await import("@/app/api/orchestrate/route");
 
-function makeRequest(body: unknown) {
+function makeRequest(body: unknown, headers?: HeadersInit) {
   return new NextRequest("http://localhost/api/orchestrate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
 }
@@ -64,9 +70,17 @@ const validBase = {
 beforeEach(() => {
   resetRateLimiterForTests();
   vi.stubGlobal("fetch", vi.fn());
-  mockGetOrgProviderKey.mockClear();
+  mockGetOrgProviderKey.mockReset();
   mockGetOrgProviderKey.mockResolvedValue("sk-test");
-  mockAuth.mockClear();
+  mockAuth.mockReset();
+  mockAuth.mockResolvedValue({
+    user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
+    organizationId: "test-org",
+    organizationName: "Test Org",
+    role: "owner" as const
+  });
+  mockResolveOrgApiKey.mockReset();
+  mockResolveOrgApiKey.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -79,6 +93,23 @@ describe("POST /api/orchestrate - authentication", () => {
     const res = await POST(makeRequest(validBase));
     expect(res.status).toBe(401);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid org API key Bearer token without a session", async () => {
+    mockAuth.mockResolvedValueOnce(null as never);
+    mockResolveOrgApiKey.mockResolvedValueOnce({ organizationId: "test-org", keyId: "key-1" });
+
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] })
+    });
+
+    const res = await POST(
+      makeRequest(validBase, { Authorization: "Bearer nx_live_testtokenvalue123456" })
+    );
+    expect(res.status).toBe(200);
+    expect(mockResolveOrgApiKey).toHaveBeenCalled();
   });
 });
 

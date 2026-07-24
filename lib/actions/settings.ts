@@ -15,9 +15,19 @@ import {
   deleteOrgProviderKey,
   writeAuditLog
 } from "@/lib/db/queries";
+import { createOrgApiKey, revokeOrgApiKey } from "@/lib/db/api-keys";
 import { ORG_KEY_PROVIDERS, MEMBERSHIP_ROLES, type MembershipRole } from "@/lib/db/schema";
 
-export type FormState = { error?: string; success?: string; inviteUrl?: string; emailSent?: boolean } | undefined;
+export type FormState =
+  | {
+      error?: string;
+      success?: string;
+      inviteUrl?: string;
+      emailSent?: boolean;
+      /** Plaintext org API key — only returned once at create. */
+      plaintextKey?: string;
+    }
+  | undefined;
 
 async function requireSession() {
   const session = await auth();
@@ -301,4 +311,72 @@ export async function saveAppearanceAction(_prev: FormState, formData: FormData)
   });
   revalidatePath("/settings/workspace");
   return { success: "Appearance saved." };
+}
+
+/* ── Organization API keys ─────────────────────────────────────────────── */
+
+const apiKeyNameSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters.").max(80)
+});
+
+export async function createOrgApiKeyAction(
+  _prev: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await requireSession();
+  requireAdmin(session.role);
+
+  const parsed = apiKeyNameSchema.safeParse({ name: formData.get("name") });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+
+  const { key, plaintext } = await createOrgApiKey({
+    organizationId: session.organizationId,
+    name: parsed.data.name,
+    createdByUserId: session.user.id
+  });
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "org_api_key.created",
+    targetType: "organization_api_key",
+    targetId: key.id,
+    metadata: { name: key.name, prefix: key.keyPrefix }
+  });
+
+  revalidatePath("/settings");
+  return {
+    success: "API key created. Copy it now — it won’t be shown again.",
+    plaintextKey: plaintext
+  };
+}
+
+export async function revokeOrgApiKeyAction(
+  _prev: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const session = await requireSession();
+  requireAdmin(session.role);
+
+  const keyId = String(formData.get("keyId") ?? "");
+  if (!z.string().uuid().safeParse(keyId).success) {
+    return { error: "Invalid key." };
+  }
+
+  const revoked = await revokeOrgApiKey({
+    organizationId: session.organizationId,
+    keyId
+  });
+  if (!revoked) return { error: "Key not found or already revoked." };
+
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "org_api_key.revoked",
+    targetType: "organization_api_key",
+    targetId: revoked.id,
+    metadata: { name: revoked.name, prefix: revoked.keyPrefix }
+  });
+
+  revalidatePath("/settings");
+  return { success: "API key revoked." };
 }

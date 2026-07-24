@@ -1,10 +1,12 @@
 # API Reference
 
 Routes live under `app/api/` and run on the Node.js runtime. Orchestrate and
-knowledge require an authenticated org session in the app; `/api/health` is
-public for uptime probes. Orchestrate/knowledge are rate-limited and validate
-inputs — see the guardrail table in `SECURITY.md`, and `lib/rate-limit.ts` /
-`lib/validation.ts` for the implementation.
+knowledge accept **dual auth**: an authenticated org session **or** a valid
+org API key (`Authorization: Bearer nx_live_…` or `x-nexus-api-key`). Keys are
+created under Settings → Profile (owners/admins); only the SHA-256 hash is
+stored. `/api/health` is public for uptime probes. Orchestrate/knowledge are
+rate-limited and validate inputs — see the guardrail table in `SECURITY.md`,
+and `lib/rate-limit.ts` / `lib/validation.ts` for the implementation.
 
 A rate-limited request returns `429` with a `Retry-After` header (seconds)
 before any other processing happens.
@@ -108,6 +110,9 @@ line — **not** a compliant Server-Sent-Events body, despite the
 `Content-Type: text/event-stream` response header) describing the
 progress of an agent run.
 
+**Auth:** session cookie **or** org API key (`Authorization: Bearer nx_live_…`
+/ `x-nexus-api-key`). API-key runs attribute `agent_runs.user_id` as null.
+
 ### Request body
 
 ```ts
@@ -165,9 +170,10 @@ a single `error` event.
 
 Manages **org-scoped** `documents`/`document_chunks` rows in Postgres (see
 [`DATABASE.md`](./DATABASE.md)) that back the Knowledge Base. Requires an
-authenticated session — every query is filtered to `session.organizationId`.
-Requires `DATABASE_URL` to be set — every handler returns `500` with a message
-telling you so if it isn't, rather than crashing.
+authenticated session **or** a valid org API key — every query is filtered to
+the resolved `organizationId`. Requires `DATABASE_URL` to be set — every
+handler returns `500` with a message telling you so if it isn't, rather than
+crashing.
 
 ### `GET /api/knowledge`
 

@@ -1,23 +1,30 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Sparkles, Server, Shield, Database, Users, ArrowRight } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { listAgentRuns } from "@/lib/db/workspace";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { Card, Pill, Avatar, Bar, DemoNotice } from "@/components/workspace/ui";
-import { proposals, proposalTemplates, proposalStats } from "@/lib/workspace/content";
+import { Card, Pill } from "@/components/workspace/ui";
+import { formatRelativeTime } from "@/lib/workspace/admin-ui";
+import { proposalTemplates } from "@/lib/workspace/content";
 
 const TEMPLATE_ICON = { server: Server, shield: Shield, database: Database, users: Users };
 
-function sectionsPct(sections: string) {
-  const m = sections.match(/(\d+)\s+of\s+(\d+)/);
-  if (!m) return 0;
-  return (Number(m[1]) / Number(m[2])) * 100;
-}
+export default async function ProposalStudioPage() {
+  const session = await auth();
+  if (!session?.organizationId) redirect("/login");
 
-export default function ProposalStudioPage() {
+  const runs = (await listAgentRuns(session.organizationId, 40)).filter((r) => r.agentType === "proposal");
+
   return (
     <>
       <PageHeader
         title="Proposal Studio"
-        description={`${proposalStats.count} proposals · ${proposalStats.pipeline} in open pipeline · ${proposalStats.winRate} win rate`}
+        description={
+          runs.length > 0
+            ? `${runs.length} recent proposal run${runs.length === 1 ? "" : "s"} in this workspace`
+            : "No saved proposals yet — generate with the Solution Consultant agent"
+        }
         actions={
           <Link href="/proposal-studio/new" className="btn-primary">
             <Sparkles size={16} aria-hidden />
@@ -25,11 +32,6 @@ export default function ProposalStudioPage() {
           </Link>
         }
       />
-
-      <DemoNotice>
-        Demo pipeline. <strong>Generate with AI</strong>{" "}runs the real Solution Consultant agent against your
-        org&rsquo;s configured model.
-      </DemoNotice>
 
       <section className="stack-md">
         <p className="section-label">Start from a template</p>
@@ -60,33 +62,39 @@ export default function ProposalStudioPage() {
       </section>
 
       <section className="stack-md">
-        <p className="section-label">Your proposals</p>
+        <p className="section-label">Recent proposal runs</p>
         <Card>
-          <div className="list">
-            {proposals.map((p) => (
-              <div key={p.id} className="list-row" style={{ gap: 16, flexWrap: "wrap" }}>
-                <Avatar initials={p.initials} index={p.avatarIndex} size="lg" square />
-
-                <div className="stack" style={{ flex: "1 1 240px", minWidth: 200 }}>
-                  <span className="title">{p.title}</span>
-                  <span className="meta">
-                    {p.client} · {p.updated}
-                  </span>
+          {runs.length === 0 ? (
+            <div className="card-pad stack-md">
+              <p className="dim" style={{ margin: 0, lineHeight: 1.55 }}>
+                Nothing here yet. Generate a proposal to record an agent run — there is no demo pipeline.
+              </p>
+              <Link href="/proposal-studio/new" className="btn-secondary" style={{ alignSelf: "flex-start" }}>
+                <Sparkles size={15} aria-hidden />
+                <span>Generate with AI</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="list">
+              {runs.map((run) => (
+                <div key={run.id} className="list-row" style={{ gap: 12 }}>
+                  <div className="stack" style={{ flex: 1, minWidth: 0 }}>
+                    <span className="title truncate">{(run.resultExcerpt || run.prompt).slice(0, 80)}</span>
+                    <span className="meta">
+                      {run.provider}/{run.model} · {formatRelativeTime(run.createdAt)}
+                    </span>
+                  </div>
+                  <Pill
+                    tone={
+                      run.status === "succeeded" ? "green" : run.status === "failed" ? "red" : "amber"
+                    }
+                  >
+                    {run.status}
+                  </Pill>
                 </div>
-
-                <div className="stack" style={{ flex: "1 1 150px", minWidth: 130, gap: 6 }}>
-                  <span className="meta">{p.sections}</span>
-                  <Bar pct={sectionsPct(p.sections)} />
-                </div>
-
-                <span className="strong nowrap" style={{ fontSize: "1rem" }}>
-                  {p.value}
-                </span>
-
-                <Pill tone={p.tone}>{p.status}</Pill>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
       </section>
     </>

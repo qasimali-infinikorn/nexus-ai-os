@@ -16,6 +16,7 @@ import {
   projectTasks,
   projects,
   userSettings,
+  documents,
   type User,
   type Organization,
   type Membership,
@@ -29,7 +30,8 @@ import {
   type Project,
   type ProjectStatus,
   type AuditLogEntry,
-  type PasswordResetToken
+  type PasswordResetToken,
+  type Document
 } from "./schema";
 // Aliased: `projects` is the Drizzle table above; these are the seed rows.
 import { boardTaskSeeds, projects as projectSeeds } from "../workspace/content";
@@ -653,6 +655,17 @@ export async function writeAuditLog(entry: {
   });
 }
 
+
+/* ── Knowledge Base documents ─────────────────────────────────────────── */
+
+export async function listOrgDocuments(organizationId: string): Promise<Document[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(documents)
+    .where(eq(documents.organizationId, organizationId))
+    .orderBy(asc(documents.name));
+}
 
 /* ── Project tasks (Kanban board) ─────────────────────────────────────── */
 

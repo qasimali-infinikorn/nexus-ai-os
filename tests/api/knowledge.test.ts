@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { __setDbForTests, type Database } from "@/lib/db/client";
-import { documentChunks, documents, organizations, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
+import { documentChunks, documents, organizations, organizationApiKeys, users, EMBEDDING_DIMENSIONS } from "@/lib/db/schema";
 import { resetRateLimiterForTests } from "@/lib/rate-limit";
 import { createTestDb } from "../helpers/testDb";
 
@@ -34,10 +34,17 @@ const { GET, POST } = await import("@/app/api/knowledge/route");
 
 let testDb: Database;
 
-function postRequest(body: unknown) {
+function getRequest(headers?: HeadersInit) {
+  return new NextRequest("http://localhost/api/knowledge", {
+    method: "GET",
+    headers
+  });
+}
+
+function postRequest(body: unknown, headers?: HeadersInit) {
   return new NextRequest("http://localhost/api/knowledge", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
 }
@@ -74,7 +81,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   resetRateLimiterForTests();
   __setDbForTests(testDb);
-  mockAuth.mockClear();
+  mockAuth.mockReset();
   mockAuth.mockResolvedValue({
     user: { id: "test-user", email: "test@example.com", name: "Test User", isPlatformAdmin: false },
     organizationId: ORG_A,
@@ -85,6 +92,8 @@ beforeEach(async () => {
   mockGetOrgProviderKey.mockResolvedValue(undefined);
   await testDb.delete(documentChunks);
   await testDb.delete(documents);
+  await testDb.delete(organizationApiKeys);
+  await testDb.delete(users);
   await testDb.delete(organizations);
   await seedOrgs();
 });
@@ -97,7 +106,7 @@ afterEach(() => {
 describe("authentication", () => {
   it("rejects an unauthenticated GET", async () => {
     mockAuth.mockResolvedValueOnce(null as never);
-    const res = await GET();
+    const res = await GET(getRequest());
     expect(res.status).toBe(401);
   });
 
@@ -106,11 +115,34 @@ describe("authentication", () => {
     const res = await POST(postRequest({ action: "search", query: "x" }));
     expect(res.status).toBe(401);
   });
+
+  it("accepts a valid org API key Bearer token without a session", async () => {
+    mockAuth.mockResolvedValueOnce(null as never);
+    const { createOrgApiKey } = await import("@/lib/db/api-keys");
+    const { users } = await import("@/lib/db/schema");
+    const userId = "00000000-0000-4000-8000-000000000099";
+    await testDb.insert(users).values({
+      id: userId,
+      email: "api@example.com",
+      name: "API",
+      passwordHash: "h"
+    });
+    const { plaintext } = await createOrgApiKey({
+      organizationId: ORG_A,
+      name: "CI",
+      createdByUserId: userId
+    });
+
+    const res = await GET(getRequest({ Authorization: `Bearer ${plaintext}` }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
 });
 
 describe("GET /api/knowledge", () => {
   it("returns an empty file list when no documents exist", async () => {
-    const res = await GET();
+    const res = await GET(getRequest());
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -124,7 +156,7 @@ describe("GET /api/knowledge", () => {
       { organizationId: ORG_B, name: "secret.md", content: "# Other tenant" }
     ]);
 
-    const res = await GET();
+    const res = await GET(getRequest());
     const data = await res.json();
 
     expect(data.files).toHaveLength(1);
@@ -345,7 +377,7 @@ describe("rate limiting", () => {
     }
     expect(lastWriteStatus).toBe(429);
 
-    const getRes = await GET();
+    const getRes = await GET(getRequest());
     expect(getRes.status).toBe(200);
   });
 });

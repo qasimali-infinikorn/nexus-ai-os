@@ -4,7 +4,7 @@ import { BarChart3, Users, AlertTriangle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { listProjects } from "@/lib/db/queries";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { Pill, Avatar, DemoNotice } from "@/components/workspace/ui";
+import { Pill, Avatar } from "@/components/workspace/ui";
 import { NewProjectButton } from "@/components/projects/new-project-dialog";
 
 const STATUS_TONE = { "On track": "green", "At risk": "amber", "Off track": "red" } as const;
@@ -26,10 +26,12 @@ export default async function ProjectsPage() {
         actions={<NewProjectButton />}
       />
 
-      <DemoNotice>
-        Projects are stored in your workspace database. Jira / Linear sync replaces this seed portfolio once
-        connected.
-      </DemoNotice>
+      {projects.length === 0 ? (
+        <p className="dim" style={{ margin: 0 }}>
+          No projects yet. Create one to open a Kanban board — optional Jira/GitHub webhooks can upsert issues when
+          configured.
+        </p>
+      ) : null}
 
       <div className="grid-3">
         {projects.map((p) => (

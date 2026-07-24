@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callLLM, AGENTS } from "@/lib/agents";
-import { auth } from "@/lib/auth";
+import { authRateLimitKey, resolveRequestAuth } from "@/lib/auth/request-auth";
 import { getOrgProviderKey } from "@/lib/db/queries";
 import { getOrgCustomAgent } from "@/lib/db/custom-agents";
 import { createAgentRun, createNotification, finishAgentRun } from "@/lib/db/workspace";
@@ -25,12 +25,16 @@ function getErrorMessage(error: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id || !session.organizationId) {
+  const authCtx = await resolveRequestAuth(req);
+  if (!authCtx) {
     return NextResponse.json({ type: "error", message: "Authentication required." }, { status: 401 });
   }
 
-  const { allowed, retryAfterMs } = rateLimit(`orchestrate:${session.user.id}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const { allowed, retryAfterMs } = rateLimit(
+    `orchestrate:${authRateLimitKey(authCtx)}`,
+    RATE_LIMIT,
+    RATE_WINDOW_MS
+  );
   if (!allowed) {
     return NextResponse.json(
       { type: "error", message: "Rate limit exceeded. Please wait before trying again." },
@@ -75,7 +79,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "error", message: "agentType is required." }, { status: 400 });
   }
 
-  const organizationId = session.organizationId;
+  const organizationId = authCtx.organizationId;
   const customAgent =
     agentType !== "coordinator" && !AGENTS[agentType]
       ? await getOrgCustomAgent(organizationId, agentType)
@@ -96,7 +100,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const userId = session.user.id;
+  const userId = authCtx.kind === "session" ? authCtx.userId : null;
   const run = await createAgentRun({
     organizationId,
     userId,

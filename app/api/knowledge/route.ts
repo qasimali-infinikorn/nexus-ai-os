@@ -4,8 +4,8 @@ import { getDb } from "@/lib/db/client";
 import { documentChunks, documents } from "@/lib/db/schema";
 import { chunkText } from "@/lib/chunk";
 import { getEmbeddings } from "@/lib/embeddings";
-import { auth } from "@/lib/auth";
 import { getOrgProviderKey } from "@/lib/db/queries";
+import { authRateLimitKey, resolveRequestAuth } from "@/lib/auth/request-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   MAX_KNOWLEDGE_CONTENT_BYTES,
@@ -26,19 +26,8 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function requireSession(): Promise<
-  | { userId: string; organizationId: string }
-  | NextResponse
-> {
-  const session = await auth();
-  if (!session?.user?.id || !session.organizationId) {
-    return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
-  }
-  return { userId: session.user.id, organizationId: session.organizationId };
-}
-
-function checkRateLimit(userId: string, bucket: "read" | "write", limit: number): NextResponse | null {
-  const { allowed, retryAfterMs } = rateLimit(`knowledge:${bucket}:${userId}`, limit, RATE_WINDOW_MS);
+function checkRateLimit(bucketKey: string, bucket: "read" | "write", limit: number): NextResponse | null {
+  const { allowed, retryAfterMs } = rateLimit(`knowledge:${bucket}:${bucketKey}`, limit, RATE_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "Rate limit exceeded. Please wait before trying again." },
@@ -54,11 +43,13 @@ async function resolveOpenAiKey(organizationId: string): Promise<string | undefi
 }
 
 // GET: List org documents + whether semantic search is available
-export async function GET() {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+export async function GET(req: NextRequest) {
+  const authCtx = await resolveRequestAuth(req);
+  if (!authCtx) {
+    return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+  }
 
-  const limited = checkRateLimit(session.userId, "read", READ_RATE_LIMIT);
+  const limited = checkRateLimit(authRateLimitKey(authCtx), "read", READ_RATE_LIMIT);
   if (limited) return limited;
 
   try {
@@ -67,9 +58,9 @@ export async function GET() {
       db
         .select()
         .from(documents)
-        .where(eq(documents.organizationId, session.organizationId))
+        .where(eq(documents.organizationId, authCtx.organizationId))
         .orderBy(documents.name),
-      resolveOpenAiKey(session.organizationId)
+      resolveOpenAiKey(authCtx.organizationId)
     ]);
 
     const fileList = rows.map((doc) => ({
@@ -90,17 +81,19 @@ export async function GET() {
 
 // POST: Handles add file, delete file, and query search (all org-scoped)
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+  const authCtx = await resolveRequestAuth(req);
+  if (!authCtx) {
+    return NextResponse.json({ success: false, error: "Authentication required." }, { status: 401 });
+  }
 
-  const limited = checkRateLimit(session.userId, "write", WRITE_RATE_LIMIT);
+  const limited = checkRateLimit(authRateLimitKey(authCtx), "write", WRITE_RATE_LIMIT);
   if (limited) return limited;
 
   try {
     const body = await req.json();
     const { action } = body;
     const db = getDb();
-    const orgId = session.organizationId;
+    const orgId = authCtx.organizationId;
 
     if (action === "add") {
       const { name, content } = body;
