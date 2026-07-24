@@ -9,6 +9,8 @@ import { Card, CardHead, Pill } from "@/components/workspace/ui";
 import { PLAN_LABELS, STATUS_LABELS, formatAdminDate, formatAdminDateTime } from "@/lib/workspace/admin-ui";
 import type { BillingInvoiceStatus } from "@/lib/db/schema";
 import type { Tone } from "@/lib/workspace/content";
+import { seatsRemaining } from "@/lib/billing/seats";
+import { BillingPortalButton } from "./portal-button";
 
 function invoiceTone(status: BillingInvoiceStatus): Tone {
   switch (status) {
@@ -57,6 +59,8 @@ export default async function BillingSettingsPage() {
   const hasMrr = org.mrrCents != null;
   const planLabel = PLAN_LABELS[org.planTier];
   const statusLabel = STATUS_LABELS[org.status];
+  const seats = seatsRemaining({ planTier: org.planTier, memberCount: assigned });
+  const canManageBilling = session.role === "owner" || session.role === "admin";
 
   return (
     <div className="stack-lg">
@@ -96,10 +100,14 @@ export default async function BillingSettingsPage() {
                   : "No payment provider linked yet · plan tier is managed by your workspace admin"}
             </span>
           </div>
-          <div className="row" style={{ gap: 10 }}>
-            <button type="button" className="btn-secondary" disabled title="Self-serve plan changes aren’t available yet">
-              Change plan
-            </button>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {canManageBilling ? (
+              <BillingPortalButton enabled={hasStripeLink && configured} />
+            ) : (
+              <button type="button" className="btn-secondary" disabled title="Owners and admins manage billing">
+                Manage billing
+              </button>
+            )}
             <Link href="/settings/team" className="btn-primary">
               Manage team
             </Link>
@@ -110,7 +118,7 @@ export default async function BillingSettingsPage() {
       <Card>
         <CardHead
           title="Team seats"
-          sub={`${assigned} member${assigned === 1 ? "" : "s"} in this workspace`}
+          sub={`${seats.used} of ${seats.limit} seats used · ${org.planTier} plan`}
           bordered
         />
         <div className="card-pad stack-md">
@@ -120,10 +128,12 @@ export default async function BillingSettingsPage() {
             </span>
             <div className="stack" style={{ gap: 2 }}>
               <span className="stat-number" style={{ fontSize: "1.4rem" }}>
-                {assigned}
+                {seats.used}/{seats.limit}
               </span>
               <span className="muted" style={{ fontSize: "0.8rem" }}>
-                Seat limits aren’t metered yet — invite teammates from Settings → Team.
+                {seats.atLimit
+                  ? "At seat limit — new invites are blocked until a seat frees up or the plan changes."
+                  : `${seats.remaining} seat${seats.remaining === 1 ? "" : "s"} remaining on this plan.`}
               </span>
             </div>
           </div>

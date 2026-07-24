@@ -24,15 +24,30 @@ function mapGithubPriority(labels: string[]): TaskPriority {
   return "Med";
 }
 
+function mapPullRequestStatus(
+  state: string | undefined,
+  merged: boolean | undefined,
+  draft: boolean | undefined
+): TaskStatus {
+  if (merged || (state ?? "").toLowerCase() === "closed") return "Done";
+  if (draft) return "To Do";
+  return "In Review";
+}
+
 /**
- * Map GitHub Issues webhook events to a Kanban upsert draft.
- * Pull requests and comments are ignored (notifications handle those).
+ * Map GitHub Issues / Pull Request webhook events to a Kanban upsert draft.
+ * Issue comments are ignored (notifications handle those).
  */
 export function githubEventToTaskDraft(params: {
   event: string | null;
   payload: Record<string, unknown>;
 }): ExternalTaskDraft | null {
   const { event, payload } = params;
+
+  if (event === "pull_request") {
+    return githubPullRequestToTaskDraft(payload);
+  }
+
   if (event !== "issues") return null;
 
   const action = String(payload.action ?? "");
@@ -40,7 +55,7 @@ export function githubEventToTaskDraft(params: {
     return null;
   }
 
-  // Skip PRs masquerading as issues.
+  // Skip PRs masquerading as issues — handled via pull_request events.
   if (payload.pull_request) return null;
 
   const issue = (payload.issue ?? {}) as {
@@ -70,5 +85,55 @@ export function githubEventToTaskDraft(params: {
     kind: mapGithubKind(labels),
     priority: mapGithubPriority(labels),
     externalUrl: issue.html_url ?? null
+  };
+}
+
+function githubPullRequestToTaskDraft(payload: Record<string, unknown>): ExternalTaskDraft | null {
+  const action = String(payload.action ?? "");
+  if (
+    ![
+      "opened",
+      "edited",
+      "reopened",
+      "closed",
+      "converted_to_draft",
+      "ready_for_review",
+      "synchronize",
+      "labeled",
+      "unlabeled"
+    ].includes(action)
+  ) {
+    return null;
+  }
+
+  const pr = (payload.pull_request ?? {}) as {
+    number?: number;
+    title?: string;
+    body?: string | null;
+    state?: string;
+    html_url?: string;
+    draft?: boolean;
+    merged?: boolean;
+    labels?: { name?: string }[];
+  };
+  const repo = (payload.repository ?? {}) as { full_name?: string };
+  const number = pr.number;
+  const repoName = repo.full_name?.trim();
+  if (!number || !repoName) return null;
+
+  const labels = (pr.labels ?? []).map((l) => l.name ?? "").filter(Boolean);
+  const externalId = `github:${repoName}#pr-${number}`;
+  const shortRepo = repoName.split("/")[1] || repoName;
+  const preferredRef = `${shortRepo.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, "") || "GH"}-PR-${number}`;
+
+  return {
+    externalId,
+    preferredRef,
+    title: (pr.title ?? `PR #${number}`).trim().slice(0, 200),
+    description: pr.body?.slice(0, 5000) ?? null,
+    status: mapPullRequestStatus(pr.state, pr.merged, pr.draft),
+    kind: "task",
+    priority: mapGithubPriority(labels),
+    externalUrl: pr.html_url ?? null
   };
 }

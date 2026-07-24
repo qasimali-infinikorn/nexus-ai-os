@@ -36,6 +36,10 @@ supersedes.
   `/reset-password/<token>` link (Resend). Tokens live in
   `password_reset_tokens` and are single-use. Responses never reveal whether
   the email is registered.
+- **Sessions**: Auth.js JWT strategy. Settings → Security can **sign out
+  everywhere else** by bumping `users.session_version` (compared on each jwt
+  refresh). There is still no per-device session inventory — that needs a DB
+  session store.
 - **Audit log**: every privileged mutation (password change/reset, invite
   creation, org key set/delete, workspace rename, task edits, calendar
   disconnect, org switch, etc.) writes an `audit_log` row via

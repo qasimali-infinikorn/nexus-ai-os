@@ -21,11 +21,14 @@ declare module "@auth/core/types" {
     organizationId: string | null;
     organizationName: string | null;
     role: MembershipRole | null;
+    /** Passed through `unstable_update` after bumping users.session_version. */
+    sessionVersion?: number;
   }
 
   interface User {
     id: string;
     isPlatformAdmin?: boolean;
+    sessionVersion?: number;
   }
 }
 
@@ -36,5 +39,6 @@ declare module "@auth/core/jwt" {
     organizationId?: string | null;
     organizationName?: string | null;
     role?: MembershipRole | null;
+    sessionVersion?: number;
   }
 }

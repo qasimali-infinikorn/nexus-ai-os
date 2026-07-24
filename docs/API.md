@@ -64,15 +64,17 @@ GitHub App / repository webhook for PR activity → **Reviews** / **Mentions**
 notifications, plus optional one-way Issues → Kanban upsert.
 
 - URL must include `?organizationId=<uuid>`
-- Optional `&projectSlug=<slug>` — when set, `issues` events upsert a
-  `project_tasks` row (`source=github`, `external_id=github:owner/repo#n`).
+- Optional `&projectSlug=<slug>` — when set, `issues` **and** `pull_request`
+  events upsert a `project_tasks` row (`source=github`).
+  Issue external id: `github:owner/repo#n`. PR: `github:owner/repo#pr-n`.
   Unknown slug → `404`. Without `projectSlug`, behavior is notifications-only.
 - Auth: `X-Hub-Signature-256` HMAC-SHA256 of the raw body using
   `GITHUB_WEBHOOK_SECRET` (falls back to `WEBHOOK_SECRET`)
 - Notification events: `pull_request` (opened / review_requested / closed),
   `pull_request_review` (submitted), PR/issue comments (`created`)
 - Task sync events: `issues` (`opened` / `edited` / `reopened` / `closed` /
-  `labeled` / `unlabeled` / `assigned`) — PRs are skipped
+  `labeled` / `unlabeled` / `assigned`) and `pull_request` (opened / edited /
+  closed / draft transitions / labeled) — issue payloads that are PRs are still skipped
 - `ping` is acknowledged with `{ ok: true, ignored: true }`
 - Success body includes `notificationId` and/or `taskId` when applicable
 
@@ -165,6 +167,12 @@ to the synthesis step (with a `status` warning) rather than aborting —
 uncaught errors from the *outer* `try` (e.g. `JSON.parse` failure, unknown
 `agentType` in direct mode) are caught once at the top level and emitted as
 a single `error` event.
+
+## `POST /api/cron/embed-jobs`
+
+Processes pending Knowledge Base embedding jobs (large documents queued from
+`POST /api/knowledge`). Auth: `Authorization: Bearer <CRON_SECRET>` (or
+`x-cron-secret`). Returns `{ ok, processed, succeeded, failed }`.
 
 ## `/api/knowledge`
 

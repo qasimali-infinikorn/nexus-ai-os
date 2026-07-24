@@ -67,6 +67,17 @@ export async function updateUserPasswordHash(userId: string, passwordHash: strin
   await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
 }
 
+/** Bump session_version so existing JWTs fail the jwt callback check. */
+export async function bumpUserSessionVersion(userId: string): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .update(users)
+    .set({ sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning({ sessionVersion: users.sessionVersion });
+  return row?.sessionVersion ?? 0;
+}
+
 async function uniqueSlug(db: ReturnType<typeof getDb>, name: string): Promise<string> {
   const base = slugify(name);
   let candidate = base;

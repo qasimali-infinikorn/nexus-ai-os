@@ -66,6 +66,8 @@ export const documents = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     content: text("content").notNull(),
+    /** Supabase Storage object path for the original uploaded file. Null for paste-created documents. */
+    storagePath: text("storage_path"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
@@ -107,6 +109,11 @@ export const users = pgTable(
     // Platform-operator flag for the Superadmin console — independent of
     // any organization membership/role.
     isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
+    /**
+     * Bumped to invalidate all existing JWTs (Settings → Security “sign out everywhere”).
+     * Compared in the Auth.js jwt callback — not a full session store.
+     */
+    sessionVersion: integer("session_version").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [uniqueIndex("users_email_unique_idx").on(table.email)]
@@ -230,6 +237,37 @@ export const organizationApiKeys = pgTable(
 
 export type OrganizationApiKey = typeof organizationApiKeys.$inferSelect;
 export type NewOrganizationApiKey = typeof organizationApiKeys.$inferInsert;
+
+/** Async embedding jobs for large Knowledge Base documents (PG queue, no Redis). */
+export const EMBED_JOB_STATUSES = ["pending", "processing", "succeeded", "failed"] as const;
+export type EmbedJobStatus = (typeof EMBED_JOB_STATUSES)[number];
+
+export const embedJobs = pgTable(
+  "embed_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    status: text("status", { enum: EMBED_JOB_STATUSES }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true })
+  },
+  (table) => [
+    index("embed_jobs_status_created_idx").on(table.status, table.createdAt),
+    index("embed_jobs_document_id_idx").on(table.documentId)
+  ]
+);
+
+export type EmbedJob = typeof embedJobs.$inferSelect;
+export type NewEmbedJob = typeof embedJobs.$inferInsert;
+
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 

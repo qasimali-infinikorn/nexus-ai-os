@@ -34,6 +34,15 @@ export async function createPlatformIncidentAction(
     createdByUserId: user.id
   });
 
+  if (incident.severity === "critical") {
+    const { pageCriticalIncident } = await import("@/lib/integrations/pagerduty");
+    void pageCriticalIncident({
+      incidentId: incident.id,
+      title: incident.title,
+      summary: incident.summary ?? undefined
+    }).catch(() => undefined);
+  }
+
   await writePlatformAuditEvent({
     actorUserId: user.id,
     action: "platform.incident.open",

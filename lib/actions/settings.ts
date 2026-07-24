@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
+import { auth, unstable_update } from "@/lib/auth";
 import { hashPassword, verifyPassword } from "@/lib/crypto";
 import {
   saveUserSettings,
@@ -13,9 +13,14 @@ import {
   createInvitation,
   setOrgProviderKey,
   deleteOrgProviderKey,
-  writeAuditLog
+  writeAuditLog,
+  getOrganizationById,
+  listOrgMembers,
+  bumpUserSessionVersion
 } from "@/lib/db/queries";
 import { createOrgApiKey, revokeOrgApiKey } from "@/lib/db/api-keys";
+import { createStripeBillingPortalSession } from "@/lib/integrations/stripe-portal";
+import { seatsRemaining } from "@/lib/billing/seats";
 import { ORG_KEY_PROVIDERS, MEMBERSHIP_ROLES, type MembershipRole } from "@/lib/db/schema";
 
 export type FormState =
@@ -26,6 +31,7 @@ export type FormState =
       emailSent?: boolean;
       /** Plaintext org API key — only returned once at create. */
       plaintextKey?: string;
+      portalUrl?: string;
     }
   | undefined;
 
@@ -84,13 +90,15 @@ export async function changePasswordAction(_prevState: FormState, formData: Form
 
   const passwordHash = await hashPassword(parsed.data.newPassword);
   await updateUserPasswordHash(session.user.id, passwordHash);
+  const sessionVersion = await bumpUserSessionVersion(session.user.id);
+  await unstable_update({ sessionVersion });
   await writeAuditLog({
     organizationId: session.organizationId,
     actorUserId: session.user.id,
     action: "user.password_changed"
   });
 
-  return { success: "Password updated." };
+  return { success: "Password updated. Other sessions were signed out." };
 }
 
 const inviteSchema = z.object({
@@ -110,6 +118,18 @@ export async function inviteTeammateAction(
     role: formData.get("role")
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+
+  const [org, members] = await Promise.all([
+    getOrganizationById(session.organizationId),
+    listOrgMembers(session.organizationId)
+  ]);
+  if (!org) return { error: "Organization not found." };
+  const seats = seatsRemaining({ planTier: org.planTier, memberCount: members.length });
+  if (seats.atLimit) {
+    return {
+      error: `Seat limit reached for the ${org.planTier} plan (${seats.limit} seats). Remove a member or upgrade the plan.`
+    };
+  }
 
   const { token } = await createInvitation({
     organizationId: session.organizationId,
@@ -379,4 +399,53 @@ export async function revokeOrgApiKeyAction(
 
   revalidatePath("/settings");
   return { success: "API key revoked." };
+}
+
+export async function revokeOtherSessionsAction(
+  _prev: FormState,
+  _formData: FormData
+): Promise<FormState> {
+  const session = await requireSession();
+  const sessionVersion = await bumpUserSessionVersion(session.user.id);
+  await unstable_update({ sessionVersion });
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "user.sessions_revoked"
+  });
+  revalidatePath("/settings/security");
+  return { success: "Signed out all other sessions. This browser stays signed in." };
+}
+
+export async function openBillingPortalAction(
+  _prev: FormState,
+  _formData: FormData
+): Promise<FormState & { portalUrl?: string }> {
+  const session = await requireSession();
+  requireAdmin(session.role);
+
+  const org = await getOrganizationById(session.organizationId);
+  if (!org?.stripeCustomerId) {
+    return { error: "No Stripe customer linked to this workspace yet." };
+  }
+
+  const base =
+    process.env.AUTH_URL?.replace(/\/$/, "") ||
+    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
+    "http://localhost:3000";
+  const result = await createStripeBillingPortalSession({
+    customerId: org.stripeCustomerId,
+    returnUrl: `${base}/settings/billing`
+  });
+  if ("error" in result) return { error: result.error };
+
+  await writeAuditLog({
+    organizationId: session.organizationId,
+    actorUserId: session.user.id,
+    action: "billing.portal_opened",
+    targetType: "organization",
+    targetId: org.id
+  });
+
+  return { success: "Opening Stripe billing portal…", portalUrl: result.url };
 }

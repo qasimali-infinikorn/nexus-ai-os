@@ -116,7 +116,7 @@ describe("jiraEventToTaskDraft", () => {
 });
 
 describe("githubEventToTaskDraft", () => {
-  it("maps issues and skips PRs", () => {
+  it("maps issues and skips PR-shaped issue events", () => {
     const draft = githubEventToTaskDraft({
       event: "issues",
       payload: {
@@ -150,6 +150,51 @@ describe("githubEventToTaskDraft", () => {
         }
       })
     ).toBeNull();
+  });
+
+  it("maps pull_request events to Kanban drafts", () => {
+    const draft = githubEventToTaskDraft({
+      event: "pull_request",
+      payload: {
+        action: "opened",
+        pull_request: {
+          number: 42,
+          title: "Add idempotency",
+          body: "details",
+          state: "open",
+          draft: false,
+          merged: false,
+          html_url: "https://github.com/acme/app/pull/42",
+          labels: [{ name: "high" }]
+        },
+        repository: { full_name: "acme/app" }
+      }
+    });
+    expect(draft).toMatchObject({
+      externalId: "github:acme/app#pr-42",
+      preferredRef: "APP-PR-42",
+      status: "In Review",
+      kind: "task",
+      priority: "High",
+      title: "Add idempotency"
+    });
+
+    expect(
+      githubEventToTaskDraft({
+        event: "pull_request",
+        payload: {
+          action: "closed",
+          pull_request: {
+            number: 42,
+            title: "Add idempotency",
+            state: "closed",
+            merged: true,
+            html_url: "https://github.com/acme/app/pull/42"
+          },
+          repository: { full_name: "acme/app" }
+        }
+      })
+    ).toMatchObject({ status: "Done", externalId: "github:acme/app#pr-42" });
   });
 });
 

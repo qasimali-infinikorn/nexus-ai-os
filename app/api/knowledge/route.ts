@@ -7,6 +7,7 @@ import { getEmbeddings } from "@/lib/embeddings";
 import { getOrgProviderKey } from "@/lib/db/queries";
 import { authRateLimitKey, resolveRequestAuth } from "@/lib/auth/request-auth";
 import { rateLimit } from "@/lib/rate-limit";
+import { EMBED_INLINE_MAX_BYTES, EMBED_INLINE_MAX_CHUNKS } from "@/lib/db/embed-jobs";
 import {
   MAX_KNOWLEDGE_CONTENT_BYTES,
   MAX_KNOWLEDGE_NAME_LENGTH,
@@ -126,27 +127,47 @@ export async function POST(req: NextRequest) {
 
       const chunks = chunkText(content);
       let embedded = false;
+      let queued = false;
       if (chunks.length > 0) {
-        // Default: embed when the org has an OpenAI key. `embed: false` skips.
         const wantEmbed = body.embed !== false;
         const openaiKey = wantEmbed ? await resolveOpenAiKey(orgId) : undefined;
-        const embeddings = openaiKey ? await getEmbeddings("openai", openaiKey, chunks) : [];
-        embedded = embeddings.length > 0;
+        const contentBytes = Buffer.byteLength(content, "utf8");
+        const shouldQueue =
+          Boolean(openaiKey) &&
+          (contentBytes > EMBED_INLINE_MAX_BYTES || chunks.length > EMBED_INLINE_MAX_CHUNKS);
 
-        await db.insert(documentChunks).values(
-          chunks.map((chunkContent, index) => ({
-            documentId: doc.id,
-            chunkIndex: index,
-            content: chunkContent,
-            embedding: embeddings[index] ?? null
-          }))
-        );
+        if (shouldQueue) {
+          await db.insert(documentChunks).values(
+            chunks.map((chunkContent, index) => ({
+              documentId: doc.id,
+              chunkIndex: index,
+              content: chunkContent,
+              embedding: null
+            }))
+          );
+          const { enqueueEmbedJob } = await import("@/lib/db/embed-jobs");
+          await enqueueEmbedJob({ organizationId: orgId, documentId: doc.id });
+          queued = true;
+        } else {
+          const embeddings = openaiKey ? await getEmbeddings("openai", openaiKey, chunks) : [];
+          embedded = embeddings.length > 0;
+
+          await db.insert(documentChunks).values(
+            chunks.map((chunkContent, index) => ({
+              documentId: doc.id,
+              chunkIndex: index,
+              content: chunkContent,
+              embedding: embeddings[index] ?? null
+            }))
+          );
+        }
       }
 
       return NextResponse.json({
         success: true,
         message: `File ${doc.name} created/updated successfully.`,
-        embedded
+        embedded,
+        queued
       });
     }
 

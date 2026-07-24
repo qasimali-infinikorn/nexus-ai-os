@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 
 /**
  * GitHub webhook ingest → Reviews/Mentions notifications, and optional
- * one-way Kanban upsert for Issues when `projectSlug` is present.
+ * one-way Kanban upsert for Issues **and Pull Requests** when `projectSlug` is present.
  *
  * URL: `/api/webhooks/github?organizationId=<uuid>&projectSlug=<slug>`
  * Auth: `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET`).

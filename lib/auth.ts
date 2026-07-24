@@ -5,6 +5,7 @@ import {
   getMembership,
   getOrganizationById,
   getUserByEmail,
+  getUserById,
   listMembershipsForUser
 } from "./db/queries";
 import { verifyPassword } from "./crypto";
@@ -37,7 +38,8 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
           id: user.id,
           email: user.email,
           name: user.name,
-          isPlatformAdmin: user.isPlatformAdmin
+          isPlatformAdmin: user.isPlatformAdmin,
+          sessionVersion: user.sessionVersion
         };
       }
     })
@@ -49,23 +51,37 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       if (user?.id) {
         token.userId = user.id;
         token.isPlatformAdmin = Boolean(user.isPlatformAdmin);
+        token.sessionVersion =
+          typeof (user as { sessionVersion?: number }).sessionVersion === "number"
+            ? (user as { sessionVersion: number }).sessionVersion
+            : 0;
 
         const memberships = await listMembershipsForUser(user.id);
         const primary = memberships[0];
         token.organizationId = primary?.organization.id ?? null;
         token.organizationName = primary?.organization.name ?? null;
         token.role = primary?.membership.role ?? null;
+      } else if (token.userId) {
+        const dbUser = await getUserById(token.userId);
+        if (!dbUser || dbUser.sessionVersion !== (token.sessionVersion ?? 0)) {
+          return {};
+        }
       }
 
-      if (trigger === "update" && token.userId && session?.organizationId) {
-        const organizationId = String(session.organizationId);
-        const membership = await getMembership(token.userId, organizationId);
-        if (membership) {
-          const org = await getOrganizationById(organizationId);
-          if (org) {
-            token.organizationId = org.id;
-            token.organizationName = org.name;
-            token.role = membership.role;
+      if (trigger === "update" && token.userId) {
+        if (session?.sessionVersion != null) {
+          token.sessionVersion = Number(session.sessionVersion);
+        }
+        if (session?.organizationId) {
+          const organizationId = String(session.organizationId);
+          const membership = await getMembership(token.userId, organizationId);
+          if (membership) {
+            const org = await getOrganizationById(organizationId);
+            if (org) {
+              token.organizationId = org.id;
+              token.organizationName = org.name;
+              token.role = membership.role;
+            }
           }
         }
       }
@@ -73,6 +89,9 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       return token;
     },
     async session({ session, token }) {
+      if (!token.userId) {
+        return { ...session, user: { ...session.user, id: "", isPlatformAdmin: false }, organizationId: null, organizationName: null, role: null };
+      }
       if (token.userId) session.user.id = token.userId;
       session.user.isPlatformAdmin = Boolean(token.isPlatformAdmin);
       session.organizationId = token.organizationId ?? null;
