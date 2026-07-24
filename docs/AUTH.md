@@ -117,3 +117,6 @@ See `docs/plans/ADMIN_PORTAL.md` for the Phase 3 console plan.
   `tests/lib/queries.test.ts` covers the underlying data-access logic
   (`createUserAndOrg`, invitations, org provider keys, audit log, password
   reset tokens) against a real embedded Postgres instead.
+- No server-side session store — Settings → Security explains JWT sessions
+  honestly (no fake device list / revoke). Remote revoke, 2FA, and SSO
+  enforcement remain backlog.

@@ -126,13 +126,7 @@ export const integrationCatalog: {
 ];
 
 export const securityControls = [
-  { id: "2fa", label: "Two-factor authentication", detail: "Require a TOTP code at every sign-in", on: false },
-  { id: "sso", label: "Enforce SSO", detail: "Members must sign in via Okta SAML", on: false },
-  { id: "api_restrict", label: "Restrict API key creation", detail: "Only admins can generate new keys", on: true }
-];
-
-export const activeSessions = [
-  { id: "s1", device: "MacBook Pro · Chrome", where: "San Francisco, US · current", current: true },
-  { id: "s2", device: "iPhone 16 · Nexus app", where: "San Francisco, US · 2 h ago", current: false },
-  { id: "s3", device: "Linux · Firefox", where: "Austin, US · yesterday", current: false }
+  { id: "2fa", label: "Two-factor authentication", detail: "Require a TOTP code at every sign-in" },
+  { id: "sso", label: "Enforce SSO", detail: "Members must sign in via your identity provider" },
+  { id: "api_restrict", label: "Restrict API key creation", detail: "Only admins can generate workspace API keys" }
 ];
