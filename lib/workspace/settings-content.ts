@@ -30,16 +30,99 @@ export const apiKeys = [
   { id: "k2", name: "CI/CD key", masked: "nx_live_••••••••b91c", lastUsed: "Last used 2 h ago" }
 ];
 
-export const integrationCatalog = [
-  { id: "github", name: "GitHub", category: "Source control", body: "Sync repos, PRs, and reviews into Code Review and agents.", initials: "GH", avatarIndex: 0, connected: true },
-  { id: "jira", name: "Jira", category: "Project mgmt", body: "Two-way sync of issues, sprints, and the Kanban board.", initials: "JI", avatarIndex: 1, connected: true },
-  { id: "slack", name: "Slack", category: "Comms", body: "Post notifications and let agents answer in channels.", initials: "SL", avatarIndex: 5, connected: true },
-  { id: "confluence", name: "Confluence", category: "Docs", body: "Index spaces for grounded Knowledge Base answers.", initials: "CF", avatarIndex: 2, connected: true },
-  { id: "datadog", name: "Datadog", category: "Observability", body: "Feed metrics and alerts to the DevOps agent.", initials: "DD", avatarIndex: 3, connected: true },
-  { id: "pagerduty", name: "PagerDuty", category: "Incidents", body: "Correlate incidents and auto-draft postmortems.", initials: "PD", avatarIndex: 4, connected: true },
-  { id: "figma", name: "Figma", category: "Design", body: "Pull design specs into proposals and reviews.", initials: "FG", avatarIndex: 5, connected: false },
-  { id: "linear", name: "Linear", category: "Project mgmt", body: "Alternative issue tracker sync for product teams.", initials: "LN", avatarIndex: 2, connected: false },
-  { id: "snyk", name: "Snyk", category: "Security", body: "Dependency scanning for the Security Reviewer agent.", initials: "SN", avatarIndex: 1, connected: false }
+/** Planned third-party OAuth / deep integrations — not live connections. */
+export type IntegrationCatalogStatus = "planned" | "webhook";
+
+export const integrationCatalog: {
+  id: string;
+  name: string;
+  category: string;
+  body: string;
+  initials: string;
+  avatarIndex: number;
+  status: IntegrationCatalogStatus;
+}[] = [
+  {
+    id: "github",
+    name: "GitHub",
+    category: "Source control",
+    body: "PR reviews and Mentions via webhook ingest today. Full OAuth repo sync is not built yet.",
+    initials: "GH",
+    avatarIndex: 0,
+    status: "webhook"
+  },
+  {
+    id: "jira",
+    name: "Jira",
+    category: "Project mgmt",
+    body: "Issue updates and Mentions via webhook ingest (optional Kanban upsert). Two-way OAuth sync is not built yet.",
+    initials: "JI",
+    avatarIndex: 1,
+    status: "webhook"
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    category: "Comms",
+    body: "Personal incoming webhooks work under Notifications. Workspace OAuth install is not built yet.",
+    initials: "SL",
+    avatarIndex: 5,
+    status: "planned"
+  },
+  {
+    id: "confluence",
+    name: "Confluence",
+    category: "Docs",
+    body: "Index spaces for grounded Knowledge Base answers.",
+    initials: "CF",
+    avatarIndex: 2,
+    status: "planned"
+  },
+  {
+    id: "datadog",
+    name: "Datadog",
+    category: "Observability",
+    body: "Feed metrics and alerts to the DevOps agent.",
+    initials: "DD",
+    avatarIndex: 3,
+    status: "planned"
+  },
+  {
+    id: "pagerduty",
+    name: "PagerDuty",
+    category: "Incidents",
+    body: "Correlate incidents and auto-draft postmortems.",
+    initials: "PD",
+    avatarIndex: 4,
+    status: "planned"
+  },
+  {
+    id: "figma",
+    name: "Figma",
+    category: "Design",
+    body: "Pull design specs into proposals and reviews.",
+    initials: "FG",
+    avatarIndex: 5,
+    status: "planned"
+  },
+  {
+    id: "linear",
+    name: "Linear",
+    category: "Project mgmt",
+    body: "Alternative issue tracker sync for product teams.",
+    initials: "LN",
+    avatarIndex: 2,
+    status: "planned"
+  },
+  {
+    id: "snyk",
+    name: "Snyk",
+    category: "Security",
+    body: "Dependency scanning for the Security Reviewer agent.",
+    initials: "SN",
+    avatarIndex: 1,
+    status: "planned"
+  }
 ];
 
 export const securityControls = [

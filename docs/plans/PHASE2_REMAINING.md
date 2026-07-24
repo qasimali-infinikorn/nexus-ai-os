@@ -19,6 +19,7 @@ Meetings / Notifications from demo shells into real, org-scoped data.
 | **AI usage (Settings)** | Done | Profile page shows live `agent_runs` month/7d/success — no invented tokens. |
 | **Connected services** | Done | Profile lists live BYOK / calendar / Slack / webhook ingest status. |
 | **Tenant billing UI** | Done | Settings → Billing uses `planTier`, `mrrCents`, member count, Stripe invoices. |
+| **Integrations catalog** | Done | Third-party grid is roadmap-only (Coming soon / Webhook ingest — no fake Connected). |
 
 ## Remaining (optional / later)
 

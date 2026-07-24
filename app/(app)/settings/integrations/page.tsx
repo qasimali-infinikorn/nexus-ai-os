@@ -106,8 +106,9 @@ export default async function IntegrationsSettingsPage({
       <section className="stack-md">
         <p className="section-label">Third-party integrations</p>
         <DemoNotice>
-          OAuth connect for GitHub/Jira/Slack is still demo UI. Review activity already works via the webhooks
-          above.
+          This catalog is a roadmap inventory — nothing here is OAuth-connected. Use AI provider keys, Calendar,
+          and Review webhooks above for live integrations. Slack notifications use a personal webhook under
+          Settings → Notifications.
         </DemoNotice>
         <div className="grid-3">
           {integrationCatalog.map((i) => (
@@ -123,9 +124,20 @@ export default async function IntegrationsSettingsPage({
                 {i.body}
               </p>
               <div className="row-between" style={{ marginTop: "auto" }}>
-                <Pill tone={i.connected ? "green" : "slate"}>{i.connected ? "Connected" : "Not connected"}</Pill>
-                <button type="button" className="btn-secondary btn-sm" disabled>
-                  {i.connected ? "Manage" : "Connect"}
+                <Pill tone={i.status === "webhook" ? "blue" : "slate"}>
+                  {i.status === "webhook" ? "Webhook ingest" : "Coming soon"}
+                </Pill>
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  disabled
+                  title={
+                    i.status === "webhook"
+                      ? "Configure the webhook URLs in the Review webhooks section above"
+                      : "OAuth connect is not implemented yet"
+                  }
+                >
+                  {i.status === "webhook" ? "See webhooks" : "Connect"}
                 </button>
               </div>
             </article>
